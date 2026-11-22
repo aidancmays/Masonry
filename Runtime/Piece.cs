@@ -12,6 +12,8 @@ namespace Masonry
     {
         [Tooltip("Space the piece occupies, in the piece's local space. Other pieces may not overlap it.")]
         [SerializeField] Bounds bounds = new(new Vector3(0f, 2f, 0f), new Vector3(10f, 4f, 10f));
+        [Tooltip("What kind of piece this is, for the Piece Set's tag rules (e.g. Objective, Puzzle).")]
+        [SerializeField] List<PieceTag> tags = new();
 
         Socket[] sockets;
 
@@ -20,6 +22,8 @@ namespace Masonry
             get => bounds;
             set => bounds = value;
         }
+
+        public List<PieceTag> Tags => tags;
 
         /// <summary>Sockets in hierarchy order. That order is the socket index the generator uses.</summary>
         public Socket[] Sockets => sockets ??= GetComponentsInChildren<Socket>(true);
@@ -63,7 +67,7 @@ namespace Masonry
         }
 
         /// <summary>Builds the generator's description of this piece.</summary>
-        public PieceDefinition ToDefinition(System.Func<SocketType, int> typeId)
+        public PieceDefinition ToDefinition(System.Func<SocketType, int> typeId, System.Func<PieceTag, int> tagId = null)
         {
             var found = GetComponentsInChildren<Socket>(true);
             var list = new List<SocketDefinition>(found.Length);
@@ -80,7 +84,19 @@ namespace Masonry
                 name = name,
                 bounds = bounds,
                 sockets = list.ToArray(),
+                tags = TagIds(tagId),
             };
+        }
+
+        int[] TagIds(System.Func<PieceTag, int> tagId)
+        {
+            if (tagId == null)
+                return System.Array.Empty<int>();
+            var ids = new List<int>();
+            foreach (var t in tags)
+                if (t != null && !ids.Contains(tagId(t)))
+                    ids.Add(tagId(t));
+            return ids.ToArray();
         }
 
         void OnDrawGizmos()

@@ -70,8 +70,28 @@ namespace Masonry
         public int maxCount;
         /// <summary>Fewest steps from the start piece (the start piece is depth 0).</summary>
         public int minDepth;
+        /// <summary>Tag ids, counted by <see cref="TagRule"/>s.</summary>
+        public int[] tags = Array.Empty<int>();
+
+        public bool HasTag(int tag) => Array.IndexOf(tags, tag) >= 0;
 
         public override string ToString() => name;
+    }
+
+    /// <summary>
+    /// Limits on every piece carrying a tag, whichever piece it is. For example "exactly 3 Objective pieces, at
+    /// least 4 steps from the start and 3 steps apart", where puzzles and combat rooms both carry Objective.
+    /// </summary>
+    public struct TagRule
+    {
+        public int tag;
+        public int minCount;
+        /// <summary>0 = no limit.</summary>
+        public int maxCount;
+        /// <summary>Fewest steps from the start piece.</summary>
+        public int minDepth;
+        /// <summary>Fewest steps between two pieces with this tag (1 = may touch, 0 = no rule).</summary>
+        public int minSpacing;
     }
 
     /// <summary>One placed piece. Position and yaw are relative to the layout origin.</summary>
@@ -130,13 +150,25 @@ namespace Masonry
         public int Seed { get; internal set; }
         /// <summary>Which attempt produced this layout (0 = the first).</summary>
         public int Attempt { get; internal set; }
-        /// <summary>True when every piece's minimum count and the minimum piece count were met.</summary>
+        /// <summary>True when the minimum piece count and every piece and tag minimum were met.</summary>
         public bool Valid { get; internal set; }
+
+        /// <summary>The piece definitions the placements index into.</summary>
+        public IReadOnlyList<PieceDefinition> Pieces { get; internal set; } = Array.Empty<PieceDefinition>();
 
         public List<Placement> Placements { get; } = new();
         public List<Connection> Connections { get; } = new();
         /// <summary>Sockets still unconnected after capping.</summary>
         public List<SocketRef> OpenSockets { get; } = new();
+
+        public int CountWithTag(int tag)
+        {
+            int n = 0;
+            foreach (var p in Placements)
+                if (Pieces[p.piece].HasTag(tag))
+                    n++;
+            return n;
+        }
 
         public int CountOf(int piece)
         {

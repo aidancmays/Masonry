@@ -6,15 +6,16 @@ namespace Masonry
 {
     /// <summary>
     /// Grows a layout from a start piece by attaching pieces to open sockets, then closes what is left with caps.
-    /// Pure and engine-scene-free: it works on <see cref="PieceDefinition"/>s, so it can run on a server, in tests,
-    /// or ahead of time. The same pieces, settings and seed always give the same layout.
+    /// Pure and scene-free: it works on <see cref="PieceDefinition"/>s, so it can run on a server, in tests, in an
+    /// editor preview, or ahead of time. The same pieces, rules and seed always give the same layout.
     /// </summary>
     /// <remarks>
     /// Pieces only ever turn about Y. A piece joins an open socket through one of its own sockets: the two face each
     /// other and share a position. Pieces must not overlap (beyond <see cref="LayoutSettings.overlapTolerance"/>).
     /// Any other socket of a new piece that lands on an open socket is joined too, which makes loops.
-    /// If a try misses a minimum count it is thrown away and the next seeded try runs, up to
-    /// <see cref="LayoutSettings.attempts"/>; the best try is returned with <see cref="Layout.Valid"/> false.
+    /// Piece and tag minimums are met by spending the end of the piece budget on whatever is still owed. If a try
+    /// still misses one it is thrown away and the next seeded try runs, up to <see cref="LayoutSettings.attempts"/>;
+    /// the best try is returned with <see cref="Layout.Valid"/> false.
     /// </remarks>
     public sealed class LayoutGenerator
     {
@@ -24,28 +25,48 @@ namespace Masonry
         const float FacingToleranceDegrees = 1f;
 
         readonly IReadOnlyList<PieceDefinition> pieces;
+        readonly TagRule[] tagRules;
+        readonly bool[] tagRuleGrows; // some Normal piece carries the tag, so growth can pay it off
         readonly Compatibility compatible;
         readonly LayoutSettings settings;
 
         Rng rng;
         Layout layout;
         int[] counts;
+        int[] tagCounts;
         int grown;
         readonly List<OrientedBox> boxes = new();
+        readonly List<List<int>> neighbours = new();
         readonly List<SocketRef> open = new();
         readonly HashSet<SocketRef> stuck = new();
         readonly List<int> candidates = new();
         readonly List<int> socketOrder = new();
         readonly List<int> free = new();
+        readonly List<int> distances = new();
+        readonly Queue<int> frontier = new();
+        int distancesFrom = -1;
 
-        public LayoutGenerator(IReadOnlyList<PieceDefinition> pieces, LayoutSettings settings, Compatibility compatible = null)
+        public LayoutGenerator(IReadOnlyList<PieceDefinition> pieces, LayoutSettings settings, Compatibility compatible = null,
+            IReadOnlyList<TagRule> tagRules = null)
         {
             this.pieces = pieces ?? throw new ArgumentNullException(nameof(pieces));
             this.settings = settings;
             this.compatible = compatible ?? ((a, b) => a == b);
+
+            this.tagRules = new TagRule[tagRules?.Count ?? 0];
+            tagRuleGrows = new bool[this.tagRules.Length];
+            for (int r = 0; r < this.tagRules.Length; r++)
+            {
+                this.tagRules[r] = tagRules[r];
+                foreach (var p in pieces)
+                    if (p.role == PieceRole.Normal && p.HasTag(this.tagRules[r].tag))
+                        tagRuleGrows[r] = true;
+            }
         }
 
         public IReadOnlyList<PieceDefinition> Pieces => pieces;
+        public IReadOnlyList<TagRule> TagRules => tagRules;
+        public LayoutSettings Settings => settings;
 
         /// <summary>Builds a layout. Never returns null; check <see cref="Layout.Valid"/>.</summary>
         public Layout Generate(int seed)
@@ -63,7 +84,7 @@ namespace Masonry
                 if (result.Valid)
                     return result;
 
-                int score = Score(result);
+                int score = result.Placements.Count - Deficit(result) * 1000;
                 if (score > bestScore)
                 {
                     best = result;
@@ -81,17 +102,31 @@ namespace Masonry
             yaw = placement.yaw + s.yaw;
         }
 
+        /// <summary>How many piece and tag minimums a layout misses, in pieces.</summary>
+        public int Deficit(Layout result)
+        {
+            int missing = 0;
+            for (int p = 0; p < pieces.Count; p++)
+                missing += Mathf.Max(0, pieces[p].minCount - result.CountOf(p));
+            foreach (var rule in tagRules)
+                missing += Mathf.Max(0, rule.minCount - result.CountWithTag(rule.tag));
+            return missing;
+        }
+
         // ---- One try ------------------------------------------------------------------------------------------
 
         Layout Build(int attemptSeed)
         {
             rng = new Rng(attemptSeed);
-            layout = new Layout();
+            layout = new Layout { Pieces = pieces };
             counts = new int[pieces.Count];
+            tagCounts = new int[tagRules.Length];
             grown = 0;
             boxes.Clear();
+            neighbours.Clear();
             open.Clear();
             stuck.Clear();
+            distancesFrom = -1;
 
             int start = PickStart();
             if (start < 0)
@@ -100,7 +135,8 @@ namespace Masonry
                 return layout;
             }
 
-            Place(start, Vector3.zero, 0f, 0, default, -1);
+            Place(start, Vector3.zero, 0f, 0, default, -1,
+                new OrientedBox(pieces[start].bounds, Vector3.zero, 0f, settings.overlapTolerance));
 
             int min = Mathf.Max(1, settings.minPieces);
             int max = Mathf.Max(min, settings.maxPieces);
@@ -116,14 +152,14 @@ namespace Masonry
                     break;
 
                 var socket = open[free[rng.Range(0, free.Count)]];
-                if (!TryGrow(socket, target - grown))
+                if (!TryAdd(socket, PieceRole.Normal, target - grown))
                     stuck.Add(socket);
             }
 
             Cap();
 
             layout.OpenSockets.AddRange(open);
-            layout.Valid = grown >= min && MissingRequired(null) == 0;
+            layout.Valid = grown >= min && Deficit(layout) == 0;
             return layout;
         }
 
@@ -140,53 +176,16 @@ namespace Masonry
             return candidates.Count == 0 ? -1 : TakeWeighted(candidates);
         }
 
-        bool TryGrow(SocketRef from, int remaining)
-        {
-            var parent = layout.Placements[from.placement];
-            int type = pieces[parent.piece].sockets[from.socket].type;
-            int depth = parent.depth + 1;
-
-            // Once the budget left is only enough for the pieces still owed, place only those.
-            int missing = MissingRequired(PieceRole.Normal);
-            bool onlyRequired = missing > 0 && remaining <= missing;
-
-            candidates.Clear();
-            for (int p = 0; p < pieces.Count; p++)
-            {
-                var d = pieces[p];
-                if (d.role != PieceRole.Normal || !Allowed(p, depth))
-                    continue;
-                if (onlyRequired && counts[p] >= d.minCount)
-                    continue;
-                if (Weight(p) <= 0f || !HasCompatibleSocket(d, type))
-                    continue;
-                candidates.Add(p);
-            }
-
-            while (candidates.Count > 0)
-            {
-                int p = TakeWeighted(candidates);
-                if (TryAttach(p, from, depth))
-                    return true;
-            }
-            return false;
-        }
-
         void Cap()
         {
-            // Required caps first, then the rest; repeat while something was placed (a cap can have sockets too).
+            // Owed caps first, then the rest; repeat while something was placed (a cap can have sockets too).
             bool placed = true;
             for (int pass = 0; placed && pass < 8; pass++)
             {
                 placed = false;
                 for (int i = 0; i < open.Count; i++)
                 {
-                    var from = open[i];
-                    var parent = layout.Placements[from.placement];
-                    int type = pieces[parent.piece].sockets[from.socket].type;
-                    int depth = parent.depth + 1;
-
-                    if (TryCap(from, type, depth, requiredOnly: true) || TryCap(from, type, depth, requiredOnly: false))
+                    if (TryAdd(open[i], PieceRole.Cap, int.MaxValue, owedOnly: true) || TryAdd(open[i], PieceRole.Cap, int.MaxValue))
                     {
                         placed = true;
                         i = -1; // the open list changed; start over from the top
@@ -195,17 +194,27 @@ namespace Masonry
             }
         }
 
-        bool TryCap(SocketRef from, int type, int depth, bool requiredOnly)
+        /// <summary>Tries pieces of one role on an open socket.</summary>
+        bool TryAdd(SocketRef from, PieceRole role, int remaining, bool owedOnly = false)
         {
+            var parent = layout.Placements[from.placement];
+            int type = pieces[parent.piece].sockets[from.socket].type;
+            int depth = parent.depth + 1;
+
+            // Once the budget left is only enough for what is still owed, place only that.
+            if (role == PieceRole.Normal)
+            {
+                int owed = Owed();
+                owedOnly |= owed > 0 && remaining <= owed;
+            }
+
             candidates.Clear();
             for (int p = 0; p < pieces.Count; p++)
             {
                 var d = pieces[p];
-                if (d.role != PieceRole.Cap || !Allowed(p, depth) || !HasCompatibleSocket(d, type))
+                if (d.role != role || (owedOnly && !IsOwed(p)) || Weight(p) <= 0f)
                     continue;
-                if (requiredOnly && counts[p] >= d.minCount)
-                    continue;
-                if (Weight(p) <= 0f)
+                if (!HasCompatibleSocket(d, type) || !Allowed(p, depth, from.placement))
                     continue;
                 candidates.Add(p);
             }
@@ -222,8 +231,9 @@ namespace Masonry
         bool TryAttach(int piece, SocketRef from, int depth)
         {
             var d = pieces[piece];
-            GetSocketPose(layout.Placements[from.placement], from.socket, out var targetPosition, out var targetYaw);
-            int type = pieces[layout.Placements[from.placement].piece].sockets[from.socket].type;
+            var parent = layout.Placements[from.placement];
+            GetSocketPose(parent, from.socket, out var targetPosition, out var targetYaw);
+            int type = pieces[parent.piece].sockets[from.socket].type;
 
             socketOrder.Clear();
             for (int j = 0; j < d.sockets.Length; j++)
@@ -246,37 +256,89 @@ namespace Masonry
             return false;
         }
 
-        void Place(int piece, Vector3 position, float yaw, int depth, SocketRef from, int via)
-        {
-            Place(piece, position, yaw, depth, from, via, new OrientedBox(pieces[piece].bounds, position, yaw, settings.overlapTolerance));
-        }
-
         void Place(int piece, Vector3 position, float yaw, int depth, SocketRef from, int via, OrientedBox box)
         {
             int index = layout.Placements.Count;
             var placement = new Placement(piece, position, yaw, depth);
             layout.Placements.Add(placement);
             boxes.Add(box);
+            neighbours.Add(new List<int>());
+            distancesFrom = -1;
             counts[piece]++;
+            for (int r = 0; r < tagRules.Length; r++)
+                if (pieces[piece].HasTag(tagRules[r].tag))
+                    tagCounts[r]++;
             if (pieces[piece].role != PieceRole.Cap)
                 grown++;
+
+            if (via >= 0)
+                Join(from, new SocketRef(index, via));
 
             var sockets = pieces[piece].sockets;
             for (int j = 0; j < sockets.Length; j++)
             {
-                var me = new SocketRef(index, j);
                 if (j == via)
-                {
-                    Join(from, me);
                     continue;
-                }
-
+                var me = new SocketRef(index, j);
                 int match = FindJoin(placement, j);
-                if (match >= 0)
+                if (match >= 0 && JoinKeepsSpacing(open[match].placement, index))
                     Join(open[match], me);
                 else
                     open.Add(me);
             }
+        }
+
+        // A loop can bring two tagged pieces closer than their rule allows; such sockets are left unjoined.
+        bool JoinKeepsSpacing(int a, int b)
+        {
+            bool any = false;
+            foreach (var rule in tagRules)
+                any |= rule.minSpacing > 1;
+            if (!any || a == b || neighbours[a].Contains(b))
+                return true;
+
+            var fromA = Steps(a);
+            var fromB = Steps(b);
+            foreach (var rule in tagRules)
+            {
+                if (rule.minSpacing <= 1)
+                    continue;
+                for (int i = 0; i < fromA.Length; i++)
+                {
+                    if (fromA[i] < 0 || !pieces[layout.Placements[i].piece].HasTag(rule.tag))
+                        continue;
+                    for (int k = 0; k < fromB.Length; k++)
+                    {
+                        if (k == i || fromB[k] < 0 || !pieces[layout.Placements[k].piece].HasTag(rule.tag))
+                            continue;
+                        if (fromA[i] + 1 + fromB[k] < rule.minSpacing)
+                            return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        int[] Steps(int source)
+        {
+            var steps = new int[layout.Placements.Count];
+            for (int i = 0; i < steps.Length; i++)
+                steps[i] = -1;
+            steps[source] = 0;
+            frontier.Clear();
+            frontier.Enqueue(source);
+            while (frontier.Count > 0)
+            {
+                int at = frontier.Dequeue();
+                foreach (int n in neighbours[at])
+                {
+                    if (steps[n] >= 0)
+                        continue;
+                    steps[n] = steps[at] + 1;
+                    frontier.Enqueue(n);
+                }
+            }
+            return steps;
         }
 
         void Join(SocketRef existing, SocketRef added)
@@ -284,6 +346,11 @@ namespace Masonry
             layout.Connections.Add(new Connection(existing, added));
             open.Remove(existing);
             stuck.Remove(existing);
+            if (!neighbours[existing.placement].Contains(added.placement))
+            {
+                neighbours[existing.placement].Add(added.placement);
+                neighbours[added.placement].Add(existing.placement);
+            }
         }
 
         int FindJoin(Placement placement, int socket)
@@ -308,39 +375,85 @@ namespace Masonry
             return -1;
         }
 
-        // ---- Helpers ------------------------------------------------------------------------------------------
+        // ---- Rules --------------------------------------------------------------------------------------------
 
-        bool Allowed(int piece, int depth)
+        bool Allowed(int piece, int depth, int parent)
         {
             var d = pieces[piece];
-            return (d.maxCount <= 0 || counts[piece] < d.maxCount) && depth >= d.minDepth;
+            if ((d.maxCount > 0 && counts[piece] >= d.maxCount) || depth < d.minDepth)
+                return false;
+
+            for (int r = 0; r < tagRules.Length; r++)
+            {
+                var rule = tagRules[r];
+                if (!d.HasTag(rule.tag))
+                    continue;
+                if ((rule.maxCount > 0 && tagCounts[r] >= rule.maxCount) || depth < rule.minDepth)
+                    return false;
+                if (rule.minSpacing > 1 && tagCounts[r] > 0 && !FarEnough(rule.tag, rule.minSpacing, parent))
+                    return false;
+            }
+            return true;
         }
 
-        // Pieces still owed get a weight even if their weight is 0, so a minimum can always be met.
+        // Steps from a new piece (one past its parent) to every placed piece with the tag.
+        bool FarEnough(int tag, int spacing, int parent)
+        {
+            DistancesFrom(parent);
+            for (int i = 0; i < layout.Placements.Count; i++)
+            {
+                if (!pieces[layout.Placements[i].piece].HasTag(tag))
+                    continue;
+                int d = distances[i];
+                if (d >= 0 && d + 1 < spacing)
+                    return false;
+            }
+            return true;
+        }
+
+        void DistancesFrom(int source)
+        {
+            if (distancesFrom == source)
+                return;
+            distancesFrom = source;
+            distances.Clear();
+            distances.AddRange(Steps(source));
+        }
+
+        bool IsOwed(int piece)
+        {
+            var d = pieces[piece];
+            if (counts[piece] < d.minCount)
+                return true;
+            for (int r = 0; r < tagRules.Length; r++)
+                if (tagCounts[r] < tagRules[r].minCount && d.HasTag(tagRules[r].tag))
+                    return true;
+            return false;
+        }
+
+        // Pieces still owed by growth (normal pieces, and tags a normal piece can pay off).
+        int Owed()
+        {
+            int owed = 0;
+            for (int p = 0; p < pieces.Count; p++)
+                if (pieces[p].role == PieceRole.Normal)
+                    owed += Mathf.Max(0, pieces[p].minCount - counts[p]);
+            for (int r = 0; r < tagRules.Length; r++)
+                if (tagRuleGrows[r])
+                    owed += Mathf.Max(0, tagRules[r].minCount - tagCounts[r]);
+            return owed;
+        }
+
+        // Owed pieces get a weight even if their weight is 0, so a minimum can always be met.
         float Weight(int piece)
         {
             var d = pieces[piece];
             if (d.weight > 0f)
                 return d.weight;
-            return counts[piece] < d.minCount ? 1f : 0f;
+            return IsOwed(piece) ? 1f : 0f;
         }
 
-        int MissingRequired(PieceRole? role)
-        {
-            int missing = 0;
-            for (int p = 0; p < pieces.Count; p++)
-                if ((role == null || pieces[p].role == role) && counts[p] < pieces[p].minCount)
-                    missing += pieces[p].minCount - counts[p];
-            return missing;
-        }
-
-        int Score(Layout result)
-        {
-            int missing = 0;
-            for (int p = 0; p < pieces.Count; p++)
-                missing += Mathf.Max(0, pieces[p].minCount - result.CountOf(p));
-            return result.Placements.Count - missing * 1000;
-        }
+        // ---- Helpers ------------------------------------------------------------------------------------------
 
         bool HasCompatibleSocket(PieceDefinition d, int type)
         {

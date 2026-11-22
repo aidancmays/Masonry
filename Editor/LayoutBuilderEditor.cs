@@ -53,6 +53,8 @@ namespace Masonry.Editor
                 if (GUILayout.Button("Clear"))
                     builder.Clear();
             }
+            if (set != null && GUILayout.Button("Open Piece Set in Workbench"))
+                WorkbenchWindow.Open(set);
 
             var layout = builder.Layout;
             if (layout != null)
@@ -77,8 +79,13 @@ namespace Masonry.Editor
         {
             if (change != PlayModeStateChange.ExitingEditMode)
                 return;
-            foreach (var builder in Object.FindObjectsByType<LayoutBuilder>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-                builder.Clear();
+            foreach (var builder in WorkbenchWindow.SceneBuilders())
+            {
+                if ((builder.gameObject.hideFlags & HideFlags.DontSave) != 0)
+                    Object.DestroyImmediate(builder.gameObject); // a Workbench preview root
+                else
+                    builder.Clear();
+            }
         }
     }
 }

@@ -7,7 +7,7 @@ so a multiplayer game only has to share one integer.
 ## Install
 
 ```json
-"com.aidancmays.masonry": "https://github.com/aidancmays/Masonry.git#v0.1.0"
+"com.aidancmays.masonry": "https://github.com/aidancmays/Masonry.git#v0.2.0"
 ```
 
 No dependencies besides Unity 6.3.
@@ -19,21 +19,33 @@ No dependencies besides Unity 6.3.
 | `Piece` | Component on the root of a piece prefab. Holds the piece's **bounds** (local box it occupies; pieces never overlap). |
 | `Socket` | Component on a child of a piece: a connection point. Sits on a side of the bounds, **blue axis pointing out**, up axis up. |
 | `SocketType` | Asset (Create > Masonry > Socket Type). Sockets join when their types match or one lists the other in *Connects To*. |
-| `PieceSet` | Asset (Create > Masonry > Piece Set). The pieces of one kind of level, with role, weight, min/max count, min depth, plus layout size. |
+| `PieceTag` | Asset (Create > Masonry > Piece Tag). A kind of piece (Objective, Puzzle, Combat...). A piece can carry several. |
+| `PieceSet` | Asset (Create > Masonry > Piece Set). The rules for one kind of level: pieces with role, weight, min/max count and min depth; tag rules; layout size. |
 | `LayoutBuilder` | Component in the scene. `Build(seed)` instantiates the layout under its transform. |
 | `LayoutGenerator` | The pure algorithm behind it. Works on plain data, so it runs in tests or on a server without instantiating anything. |
 
+## Workbench
+
+**Window > Masonry > Workbench** (or *Open in Workbench* on a Piece Set). Rules on the left, a page of seeds drawn as
+top-down maps on the right, redrawn whenever a rule changes. Colours: start, required pieces, each tag, caps, and red
+dots for sockets left open. Hover a map for piece names; click to select (counts per piece and tag); double-click or
+*Build in Scene* to build that seed in the scene (on the scene's builder for this set, or a temporary preview that is
+never saved). *Run N Seeds* gives the share of seeds that meet every rule, piece and tag counts, and timing.
+
 ## Making a piece
 
-1. Model the piece upright. Pieces only ever turn about Y. A shared grid (for example 12 m cells) keeps pieces
-   lining up and lets loops close, but it is not required.
+1. Model the piece upright. Pieces only ever turn about Y. A shared grid (for example 12 m cells) keeps pieces of
+   different sizes lining up and lets loops close, but it is not required.
 2. Add `Piece` to the prefab root. Use **Fit To Renderers** or **Edit Bounds** to set the box. The box is what
    other pieces may not overlap, so leave out overhangs you are happy to have overlap.
-3. Click **Add Socket** for each opening, move it to the middle of the opening on the edge of the bounds and turn
+3. On a grid, open *Grid Footprint*: set the cell size, the footprint in cells (1x1, 1x2, 2x2...) and press
+   **Set Bounds**, then click the cells around the footprint to add or remove sockets (they face outward, with the
+   *New Socket Type*). Off the grid, click **Add Socket** for each opening, move it to the middle of the opening on the edge of the bounds and turn
    it so its blue arrow points out. Give it a Socket Type.
 4. Optional: in the socket's *When Joined* / *When Open* lists, add objects to switch on in each case. A gate or
    wall in *When Open* seals openings that ended up with nothing attached.
-5. The Piece inspector warns about tilted sockets, sockets off the bounds, sockets facing inward and duplicates.
+5. Give it *Tags* if a tag rule should count it (an objective, a shop, a boss room...).
+6. The Piece inspector warns about tilted sockets, sockets off the bounds, sockets facing inward and duplicates.
 
 ## Making a piece set
 
@@ -47,6 +59,14 @@ Add each prefab to a Piece Set and choose its role:
 are retried with the next seeded try). *Max Count* limits it (0 = no limit). *Min Depth* keeps it at least that many
 steps from the start piece, so an exit can be kept far from the entrance. A required piece may have weight 0: it is
 then only placed when the budget runs low, which tends to put it near the end of a branch.
+
+### Tag rules
+
+Tag rules count every piece with a tag, whichever piece it is. *Min* and *Max* equal give an exact number: "3
+Objectives" can be any mix of puzzle rooms and combat arenas tagged Objective. *Depth* keeps them away from the
+start; *Spacing* is the fewest steps between two of them (also checked when a loop closes). Owed pieces are placed
+as the piece budget runs out, so give tagged pieces some weight if they should also appear earlier in a branch.
+Tagged caps count too, as dead-end rooms.
 
 Select a `LayoutBuilder` to preview: set a seed and press **Build**, **Next Seed** or **Random Seed**. Previews are
 never saved with the scene and are cleared before Play mode.

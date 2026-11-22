@@ -241,5 +241,118 @@ namespace Masonry.Tests
                 Assert.That(f, Is.GreaterThanOrEqualTo(0f).And.LessThan(1f));
             }
         }
+
+        // ---- Tags -----------------------------------------------------------------------------------------------
+
+        const int Objective = 0;
+
+        static List<PieceDefinition> WithObjectives()
+        {
+            var pieces = GraveyardLike();
+            var puzzle = Cellular("Puzzle", PieceRole.Normal, South, North);
+            puzzle.tags = new[] { Objective };
+            var arena = Cellular("Arena", PieceRole.Normal, South, North, East);
+            arena.tags = new[] { Objective };
+            arena.weight = 0.5f;
+            var shrine = Cellular("Shrine", PieceRole.Cap, South);
+            shrine.tags = new[] { Objective };
+            shrine.weight = 0f;
+            pieces.Add(puzzle);
+            pieces.Add(arena);
+            pieces.Add(shrine);
+            return pieces;
+        }
+
+        static TagRule[] ExactlyThreeObjectives(int spacing = 3) => new[]
+        {
+            new TagRule { tag = Objective, minCount = 3, maxCount = 3, minDepth = 2, minSpacing = spacing },
+        };
+
+        [Test]
+        public void TagRulesGiveAnExactCount()
+        {
+            var pieces = WithObjectives();
+            int valid = 0;
+            for (int seed = 0; seed < 60; seed++)
+            {
+                var layout = new LayoutGenerator(pieces, Settings(), null, ExactlyThreeObjectives()).Generate(seed);
+                Assert.LessOrEqual(layout.CountWithTag(Objective), 3, $"seed {seed}");
+                if (!layout.Valid)
+                    continue;
+                valid++;
+                Assert.AreEqual(3, layout.CountWithTag(Objective), $"seed {seed}");
+                foreach (var p in layout.Placements)
+                    if (pieces[p.piece].HasTag(Objective))
+                        Assert.GreaterOrEqual(p.depth, 2, $"seed {seed}");
+            }
+            Assert.Greater(valid, 55);
+        }
+
+        [Test]
+        public void TagSpacingKeepsTaggedPiecesApart()
+        {
+            var pieces = WithObjectives();
+            for (int seed = 0; seed < 40; seed++)
+            {
+                var layout = new LayoutGenerator(pieces, Settings(), null, ExactlyThreeObjectives(spacing: 3)).Generate(seed);
+                var tagged = new List<int>();
+                for (int i = 0; i < layout.Placements.Count; i++)
+                    if (pieces[layout.Placements[i].piece].HasTag(Objective))
+                        tagged.Add(i);
+                var adjacency = Adjacency(layout);
+                foreach (int a in tagged)
+                {
+                    var distance = Steps(adjacency, a);
+                    foreach (int b in tagged)
+                        if (a != b)
+                            Assert.GreaterOrEqual(distance[b], 3, $"seed {seed}: {a} and {b}");
+                }
+            }
+        }
+
+        [Test]
+        public void MixedSizesAndTagsStayDeterministic()
+        {
+            var pieces = WithObjectives();
+            var a = new LayoutGenerator(pieces, Settings(), null, ExactlyThreeObjectives()).Generate(99);
+            var b = new LayoutGenerator(pieces, Settings(), null, ExactlyThreeObjectives()).Generate(99);
+            Assert.AreEqual(a.Placements.Count, b.Placements.Count);
+            for (int i = 0; i < a.Placements.Count; i++)
+                Assert.AreEqual(a.Placements[i].position, b.Placements[i].position);
+        }
+
+        static List<List<int>> Adjacency(Layout layout)
+        {
+            var adjacency = new List<List<int>>();
+            for (int i = 0; i < layout.Placements.Count; i++)
+                adjacency.Add(new List<int>());
+            foreach (var c in layout.Connections)
+            {
+                adjacency[c.a.placement].Add(c.b.placement);
+                adjacency[c.b.placement].Add(c.a.placement);
+            }
+            return adjacency;
+        }
+
+        static int[] Steps(List<List<int>> adjacency, int from)
+        {
+            var distance = new int[adjacency.Count];
+            for (int i = 0; i < distance.Length; i++)
+                distance[i] = int.MaxValue;
+            distance[from] = 0;
+            var queue = new Queue<int>();
+            queue.Enqueue(from);
+            while (queue.Count > 0)
+            {
+                int at = queue.Dequeue();
+                foreach (int n in adjacency[at])
+                    if (distance[n] == int.MaxValue)
+                    {
+                        distance[n] = distance[at] + 1;
+                        queue.Enqueue(n);
+                    }
+            }
+            return distance;
+        }
     }
 }
