@@ -50,6 +50,8 @@ namespace Masonry
         [Min(0f)] public float overlapTolerance;
         [Tooltip("Open sockets this close (metres) and facing each other are joined, which closes loops.")]
         [Min(0.001f)] public float joinDistance;
+        [Tooltip("How often growth continues from the deepest open socket instead of a random one. 0 = bushy layouts, 1 = long winding ones. Deeper layouts leave room for objectives that must each be further in.")]
+        [Range(0f, 1f)] public float depthBias;
 
         public static LayoutSettings Default => new()
         {

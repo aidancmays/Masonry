@@ -193,7 +193,7 @@ namespace Masonry
                 if (free.Count == 0)
                     break;
 
-                var socket = open[free[rng.Range(0, free.Count)]];
+                var socket = open[free[PickGrowthSocket()]];
                 if (!TryAdd(socket, PieceRole.Normal, target - grown))
                     stuck.Add(socket);
             }
@@ -204,6 +204,29 @@ namespace Masonry
             FindDeadEnds();
             layout.Valid = grown >= min && Deficit(layout) == 0;
             return layout;
+        }
+
+        // Index into `free`: usually random; with depthBias, sometimes the deepest open socket (ties at random).
+        int PickGrowthSocket()
+        {
+            if (settings.depthBias <= 0f || rng.Value() >= settings.depthBias)
+                return rng.Range(0, free.Count);
+            int deepest = -1, ties = 0, pick = 0;
+            for (int i = 0; i < free.Count; i++)
+            {
+                int d = layout.Placements[open[free[i]].placement].depth;
+                if (d > deepest)
+                {
+                    deepest = d;
+                    ties = 1;
+                    pick = i;
+                }
+                else if (d == deepest && rng.Range(0, ++ties) == 0)
+                {
+                    pick = i;
+                }
+            }
+            return pick;
         }
 
         // Arrival falls back to Start, Start falls back to Normal.

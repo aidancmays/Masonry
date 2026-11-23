@@ -22,6 +22,11 @@ namespace Masonry
         [Min(0)] public int minPieces;
         [Min(0)] public int maxPieces;
 
+        [Tooltip("Depth bias for the first level (see LayoutSettings). Negative = the set's own.")]
+        [Range(-1f, 1f)] public float depthBias = -1f;
+        [Tooltip("Tries for the first level. 0 = the set's own.")]
+        [Min(0)] public int attempts;
+
         [Tooltip("Exact or ranged counts for tags on the first level, replacing the set's rule for that tag.")]
         public List<TagCount> tagCounts = new();
 

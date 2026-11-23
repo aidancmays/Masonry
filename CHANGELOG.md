@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.8.0] - 2026-11-23
+
+- `LayoutSettings.depthBias`: how often growth continues from the deepest open socket. Deeper layouts fit many
+  depth-stepped objectives (e.g. 8 objectives two steps apart build reliably at 0.8).
+- `BuildOptions.depthBias` and `BuildOptions.attempts` overrides for the first level.
+
 ## [0.7.0] - 2026-11-23
 
 - `BuildOptions`: build flags, `maxLinkDepth`, and first-level overrides for piece count and tag counts.

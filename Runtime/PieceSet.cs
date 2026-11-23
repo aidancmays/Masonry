@@ -211,6 +211,10 @@ namespace Masonry
                 layoutSettings.minPieces = overrides.minPieces;
             if (overrides != null && overrides.maxPieces > 0)
                 layoutSettings.maxPieces = Mathf.Max(overrides.maxPieces, layoutSettings.minPieces);
+            if (overrides != null && overrides.depthBias >= 0f)
+                layoutSettings.depthBias = overrides.depthBias;
+            if (overrides != null && overrides.attempts > 0)
+                layoutSettings.attempts = overrides.attempts;
 
             int[] TagIds(List<PieceTag> list)
             {

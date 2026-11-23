@@ -1,6 +1,6 @@
 {
   "name": "com.aidancmays.masonry",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "displayName": "Masonry",
   "description": "Seeded procedural levels from modular pieces. Author prefabs with a Piece (bounds) and Sockets (typed connection points), list them in a Piece Set with weights and counts, and a Layout Builder snaps them together into a layout that is identical on every machine for the same seed.",
   "unity": "6000.3",

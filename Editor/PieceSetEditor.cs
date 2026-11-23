@@ -88,6 +88,7 @@ namespace Masonry.Editor
                 max.intValue = Mathf.Max(min.intValue, EditorGUILayout.IntField(max.intValue));
             }
             EditorGUILayout.PropertyField(settings.FindPropertyRelative("attempts"));
+            EditorGUILayout.PropertyField(settings.FindPropertyRelative("depthBias"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("gridSize"));
             using (new EditorGUI.IndentLevelScope())
             {
