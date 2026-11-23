@@ -13,6 +13,27 @@ namespace Masonry
         Start,
         /// <summary>Only used at the end, to close sockets that are still open (dead ends, walls, alcoves).</summary>
         Cap,
+        /// <summary>
+        /// Placed only where another level leads into this one (a <see cref="LevelLink"/>), e.g. the foot of a
+        /// stairwell. Never used as the start of the level on its own.
+        /// </summary>
+        Arrival,
+    }
+
+    /// <summary>Where one start piece of a layout goes, relative to the layout origin.</summary>
+    public struct LayoutStart
+    {
+        public Vector3 position;
+        public float yaw;
+        /// <summary>Piece index to place, or -1 to pick an Arrival piece (else a Start piece).</summary>
+        public int piece;
+
+        public LayoutStart(Vector3 position, float yaw, int piece = -1)
+        {
+            this.position = position;
+            this.yaw = yaw;
+            this.piece = piece;
+        }
     }
 
     /// <summary>Size and retry rules for a layout.</summary>

@@ -7,7 +7,7 @@ so a multiplayer game only has to share one integer.
 ## Install
 
 ```json
-"com.aidancmays.masonry": "https://github.com/aidancmays/Masonry.git#v0.3.0"
+"com.aidancmays.masonry": "https://github.com/aidancmays/Masonry.git#v0.4.0"
 ```
 
 No dependencies besides Unity 6.3.
@@ -23,6 +23,8 @@ No dependencies besides Unity 6.3.
 | `ModuleType` | Asset (Create > Masonry > Module Type). What kind of space a piece is (Graveyard, Mausoleum...), with a priority. |
 | `BoundaryStyle` | Asset (Create > Masonry > Boundary Style). A kind of edge: Fence, Wall, Hedge... |
 | `Boundary` | Component on one stretch of a piece's edge holding the art for each style; the layout decides which one shows. |
+| `LevelLink` | Component on a piece that leads into another level built from another Piece Set (stairs down to a crypt). |
+| `LevelPlan` | Builds a set and every level its links reach, as data (`LayoutBuilder` uses it). |
 | `PieceSet` | Asset (Create > Masonry > Piece Set). The rules for one kind of level: pieces with role, weight, min/max count and min depth; tag rules; layout size. |
 | `LayoutBuilder` | Component in the scene. `Build(seed)` instantiates the layout under its transform. |
 | `LayoutGenerator` | The pure algorithm behind it. Works on plain data, so it runs in tests or on a server without instantiating anything. |
@@ -57,6 +59,8 @@ Add each prefab to a Piece Set and choose its role:
 - **Start**: the first piece, placed at the builder's origin (for example the entrance with spawn points).
 - **Normal**: grows the layout until the piece count (*Min/Max Pieces*) is reached.
 - **Cap**: used only at the end, to close sockets still open (dead ends, alcoves).
+- **Arrival**: placed only where another level links into this one (the foot of a stair). Never the start of the
+  level on its own, so a set can be both a level of its own (with a Start piece) and a level reached from above.
 
 *Weight* is the relative chance among the pieces that fit. *Min Count* forces a piece to appear (layouts that miss it
 are retried with the next seeded try). *Max Count* limits it (0 = no limit). *Min Depth* keeps it at least that many
@@ -89,6 +93,18 @@ placed first. Example: Graveyard + Graveyard = nothing, Mausoleum + Graveyard = 
 
 The Workbench maps draw the chosen boundaries in each style's colour. `Boundary.Style`, `Drawn` and `Neighbour`
 tell game code what was picked; `BoundaryResolver.Resolve` runs it on pieces placed some other way.
+
+## Levels
+
+A level can lead into another: put a `LevelLink` on a child of a piece (a crypt entrance), where the other level's
+arrival piece should stand, and point it at that level's Piece Set. After a build, every link to the same set
+feeds one shared level grown from all of them at once, with its own rules and piece budget and a seed derived from
+the main seed. Links can chain further down (up to 4 deep, and a set is never built twice).
+
+`LayoutBuilder` builds every level; `Levels` lists them, `Piece.Level` says which one a piece belongs to. Boundaries
+are resolved per level. In the Workbench, the level picker in the toolbar shows any level of each seed, and *Edit
+Its Rules* opens that level's set. The same Piece Set can also be used on its own (its Start piece) for floors that
+begin in it.
 
 ## Building at runtime
 

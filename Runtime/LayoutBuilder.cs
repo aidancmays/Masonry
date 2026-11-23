@@ -22,10 +22,13 @@ namespace Masonry
             set => pieceSet = value;
         }
 
-        /// <summary>The last layout built, or null.</summary>
+        /// <summary>The last layout built for this builder's own set (the first level), or null.</summary>
         public Layout Layout { get; private set; }
 
-        /// <summary>Pieces from the last build, indexed like <see cref="Masonry.Layout.Placements"/>.</summary>
+        /// <summary>Every level of the last build: this builder's set first, then the levels its pieces link to.</summary>
+        public IReadOnlyList<LevelLayout> Levels => levels;
+
+        /// <summary>Pieces from the last build, every level, in order. <see cref="Piece.Level"/> says which level.</summary>
         public IReadOnlyList<Piece> Pieces => built;
 
         /// <summary>Raised after a build, once every piece is placed and every socket knows if it was joined.</summary>
@@ -34,7 +37,9 @@ namespace Masonry
         /// <summary>Raised after the pieces of a build are removed.</summary>
         public event Action<LayoutBuilder> Cleared;
 
-        /// <summary>Removes any previous build and builds the layout for this seed.</summary>
+        readonly List<LevelLayout> levels = new();
+
+        /// <summary>Removes any previous build and builds the layout for this seed, with every linked level.</summary>
         public Layout Build(int seed) => Build(seed, preview: false);
 
         /// <summary>Like <see cref="Build"/>, but the pieces are never saved with the scene. Used by the inspector.</summary>
@@ -49,40 +54,47 @@ namespace Masonry
                 return null;
             }
 
-            var generator = pieceSet.CreateGenerator(out var entries);
-            var layout = generator.Generate(seed);
-            if (!layout.Valid)
-                Debug.LogWarning($"[Masonry] {name}: seed {seed} could not meet the Piece Set's minimum counts in {pieceSet.Settings.attempts} tries; built the closest layout.", this);
-
-            foreach (var placement in layout.Placements)
+            levels.AddRange(LevelPlan.Generate(pieceSet, seed));
+            for (int l = 0; l < levels.Count; l++)
             {
-                var prefab = entries[placement.piece].piece;
-                var instance = Instantiate(prefab, transform);
-                instance.transform.SetLocalPositionAndRotation(placement.position, placement.Rotation);
-                instance.name = $"{prefab.name} ({built.Count})";
-                instance.PlacementIndex = built.Count;
-                instance.Depth = placement.depth;
-                if (preview)
-                    SetHideFlags(instance.transform, HideFlags.DontSave);
-                built.Add(instance);
+                var level = levels[l];
+                var layout = level.Layout;
+                if (!layout.Valid)
+                    Debug.LogWarning($"[Masonry] {name}: {level.Set.name} (seed {layout.Seed}) could not meet its rules in {level.Set.Settings.attempts} tries; built the closest layout.", this);
+
+                var pieces = new List<Piece>();
+                foreach (var placement in layout.Placements)
+                {
+                    var prefab = level.Entries[placement.piece].piece;
+                    var instance = Instantiate(prefab, transform);
+                    instance.transform.SetLocalPositionAndRotation(placement.position, placement.Rotation);
+                    instance.name = l == 0 ? $"{prefab.name} ({pieces.Count})" : $"{level.Set.name} / {prefab.name} ({pieces.Count})";
+                    instance.PlacementIndex = pieces.Count;
+                    instance.Depth = placement.depth;
+                    instance.Level = l;
+                    if (preview)
+                        SetHideFlags(instance.transform, HideFlags.DontSave);
+                    pieces.Add(instance);
+                }
+
+                foreach (var piece in pieces)
+                    foreach (var socket in piece.Sockets)
+                        socket.SetJoined(null);
+                foreach (var c in layout.Connections)
+                {
+                    var a = pieces[c.a.placement].Sockets[c.a.socket];
+                    var b = pieces[c.b.placement].Sockets[c.b.socket];
+                    a.SetJoined(b);
+                    b.SetJoined(a);
+                }
+
+                BoundaryResolver.Resolve(pieces, level.Set);
+                built.AddRange(pieces);
             }
 
-            foreach (var piece in built)
-                foreach (var socket in piece.Sockets)
-                    socket.SetJoined(null);
-            foreach (var c in layout.Connections)
-            {
-                var a = SocketAt(c.a);
-                var b = SocketAt(c.b);
-                a.SetJoined(b);
-                b.SetJoined(a);
-            }
-
-            BoundaryResolver.Resolve(built, pieceSet);
-
-            Layout = layout;
+            Layout = levels[0].Layout;
             Built?.Invoke(this);
-            return layout;
+            return Layout;
         }
 
         /// <summary>Removes every piece under this transform, including previews.</summary>
@@ -103,12 +115,11 @@ namespace Masonry
 
             bool had = built.Count > 0 || Layout != null;
             built.Clear();
+            levels.Clear();
             Layout = null;
             if (had)
                 Cleared?.Invoke(this);
         }
-
-        Socket SocketAt(SocketRef r) => built[r.placement].Sockets[r.socket];
 
         static void SetHideFlags(Transform t, HideFlags flags)
         {

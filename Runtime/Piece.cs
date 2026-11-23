@@ -46,6 +46,9 @@ namespace Masonry
         /// <summary>Steps from the start piece in the built layout (start is 0).</summary>
         public int Depth { get; internal set; }
 
+        /// <summary>Which level of the builder's last build this piece belongs to (0 = the builder's own set).</summary>
+        public int Level { get; internal set; }
+
         /// <summary>Forgets cached sockets, after adding or removing sockets by script.</summary>
         public void RefreshSockets()
         {

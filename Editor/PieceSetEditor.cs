@@ -25,7 +25,7 @@ namespace Masonry.Editor
         static readonly string[] PieceTips =
         {
             "The piece prefab.",
-            "Start: the first piece. Normal: grows the layout. Cap: only closes sockets left open at the end.",
+            "Start: the first piece. Normal: grows the layout. Cap: only closes sockets left open at the end. Arrival: placed only where another level links into this one.",
             "Relative chance among the pieces that fit. 0 = only when a minimum needs it.",
             "At least this many in every layout.",
             "At most this many. 0 = no limit.",

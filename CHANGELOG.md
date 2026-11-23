@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.0] - 2026-11-23
+
+- Levels: `LevelLink` on a piece leads into a level built from another Piece Set (e.g. crypt stairs down to the
+  crypts). `LevelPlan` builds a set and every level its links reach; `LayoutBuilder` builds them all, exposes
+  `Levels`, and tags pieces with `Piece.Level`. Boundaries are resolved per level.
+- `LayoutGenerator.Generate(seed, starts)`: grow one layout from several start points (`LayoutStart`).
+- New role `Arrival`: placed only where a link enters the level, never as its standalone start.
+- Workbench: level picker and *Edit Its Rules* for linked levels; captions and *Build in Scene* use the main seed.
+
 ## [0.3.0] - 2026-11-23
 
 - Module types (`ModuleType`), boundary styles (`BoundaryStyle`) and per-edge `Boundary` components. A Piece Set's

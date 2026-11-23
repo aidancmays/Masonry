@@ -45,6 +45,7 @@ namespace Masonry
         readonly List<int> distances = new();
         readonly Queue<int> frontier = new();
         int distancesFrom = -1;
+        IReadOnlyList<LayoutStart> starts;
 
         public LayoutGenerator(IReadOnlyList<PieceDefinition> pieces, LayoutSettings settings, Compatibility compatible = null,
             IReadOnlyList<TagRule> tagRules = null)
@@ -68,9 +69,17 @@ namespace Masonry
         public IReadOnlyList<TagRule> TagRules => tagRules;
         public LayoutSettings Settings => settings;
 
-        /// <summary>Builds a layout. Never returns null; check <see cref="Layout.Valid"/>.</summary>
-        public Layout Generate(int seed)
+        /// <summary>Builds a layout from one start piece at the origin. Never returns null; check <see cref="Layout.Valid"/>.</summary>
+        public Layout Generate(int seed) => Generate(seed, null);
+
+        /// <summary>
+        /// Builds a layout grown from several start points at once, e.g. every stairwell that leads down into this
+        /// level. Each start places its own piece (or an <see cref="PieceRole.Arrival"/> piece, else a Start piece);
+        /// the piece budget and every rule cover the whole level. Null or empty = one start at the origin.
+        /// </summary>
+        public Layout Generate(int seed, IReadOnlyList<LayoutStart> starts)
         {
+            this.starts = starts;
             var seeds = new Rng(seed);
             Layout best = null;
             int bestScore = int.MinValue;
@@ -128,15 +137,37 @@ namespace Masonry
             stuck.Clear();
             distancesFrom = -1;
 
-            int start = PickStart();
-            if (start < 0)
+            if (starts == null || starts.Count == 0)
             {
-                Debug.LogWarning("[Masonry] The piece set has no start piece and no normal piece to start from.");
-                return layout;
+                int start = PickStart(PieceRole.Start);
+                if (start < 0)
+                {
+                    Debug.LogWarning("[Masonry] The piece set has no start piece and no normal piece to start from.");
+                    return layout;
+                }
+                Place(start, Vector3.zero, 0f, 0, default, -1,
+                    new OrientedBox(pieces[start].bounds, Vector3.zero, 0f, settings.overlapTolerance));
             }
-
-            Place(start, Vector3.zero, 0f, 0, default, -1,
-                new OrientedBox(pieces[start].bounds, Vector3.zero, 0f, settings.overlapTolerance));
+            else
+            {
+                foreach (var s in starts)
+                {
+                    int piece = s.piece >= 0 && s.piece < pieces.Count ? s.piece : PickStart(PieceRole.Arrival);
+                    if (piece < 0)
+                        continue;
+                    float yaw = SnapYaw(s.yaw);
+                    var position = Snap(s.position);
+                    var box = new OrientedBox(pieces[piece].bounds, position, yaw, settings.overlapTolerance);
+                    if (Collides(box))
+                        continue; // two entrances too close together: the first one wins
+                    Place(piece, position, yaw, 0, default, -1, box);
+                }
+                if (layout.Placements.Count == 0)
+                {
+                    Debug.LogWarning("[Masonry] None of the level's start points could take a piece.");
+                    return layout;
+                }
+            }
 
             int min = Mathf.Max(1, settings.minPieces);
             int max = Mathf.Max(min, settings.maxPieces);
@@ -163,12 +194,18 @@ namespace Masonry
             return layout;
         }
 
-        int PickStart()
+        // Arrival falls back to Start, Start falls back to Normal.
+        int PickStart(PieceRole role)
         {
             candidates.Clear();
-            for (int p = 0; p < pieces.Count; p++)
-                if (pieces[p].role == PieceRole.Start)
-                    candidates.Add(p);
+            if (role == PieceRole.Arrival)
+                for (int p = 0; p < pieces.Count; p++)
+                    if (pieces[p].role == PieceRole.Arrival)
+                        candidates.Add(p);
+            if (candidates.Count == 0)
+                for (int p = 0; p < pieces.Count; p++)
+                    if (pieces[p].role == PieceRole.Start)
+                        candidates.Add(p);
             if (candidates.Count == 0)
                 for (int p = 0; p < pieces.Count; p++)
                     if (pieces[p].role == PieceRole.Normal)

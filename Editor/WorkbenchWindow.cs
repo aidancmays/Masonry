@@ -24,6 +24,7 @@ namespace Masonry.Editor
         [SerializeField] int selected = -1;
         [SerializeField] int batchSize = 200;
         [SerializeField] float rulesWidth = 380f;
+        [SerializeField] int viewLevel;
 
         UnityEditor.Editor setEditor;
         Vector2 rulesScroll;
@@ -39,6 +40,14 @@ namespace Masonry.Editor
         readonly Dictionary<Layout, List<(Vector3 a, Vector3 b, Color color)>> boundaryLines = new();
         List<(Vector3 position, float yaw, float length)>[] boundaryDefs = Array.Empty<List<(Vector3, float, float)>>();
         BatchStats stats;
+
+        // Levels per seed on the page, and the level each shown layout belongs to.
+        readonly List<List<LevelLayout>> pageLevels = new();
+        readonly Dictionary<Layout, LevelLayout> levelOf = new();
+        readonly Dictionary<PieceSet, List<PieceTag>> tagsOf = new();
+        readonly Dictionary<PieceSet, List<(Vector3, float, float)>[]> boundaryDefsOf = new();
+        PieceSet ruleSet;
+        string[] levelNames = Array.Empty<string>();
 
         [MenuItem("Window/Masonry/Workbench")]
         static void ShowWindow() => Open(null);
@@ -100,6 +109,8 @@ namespace Masonry.Editor
         void SetPieceSet(PieceSet s)
         {
             set = s;
+            viewLevel = 0;
+            levelNames = Array.Empty<string>();
             selected = -1;
             stats = null;
             MarkDirty();
@@ -115,15 +126,16 @@ namespace Masonry.Editor
 
         void OnGUI()
         {
+            // Before anything is laid out, so the toolbar's level picker matches between Layout and Repaint.
+            if (set != null && dirty && Event.current.type == EventType.Layout)
+                Regenerate();
+
             Toolbar();
             if (set == null)
             {
                 EditorGUILayout.HelpBox("Pick a Piece Set (Create > Masonry > Piece Set) to edit its rules and preview layouts.", MessageType.Info);
                 return;
             }
-
-            if (dirty && Event.current.type == EventType.Layout)
-                Regenerate();
 
             using (new EditorGUILayout.HorizontalScope())
             {
@@ -191,6 +203,20 @@ namespace Masonry.Editor
                 mapSize = GUILayout.HorizontalSlider(mapSize, 120f, 520f, GUILayout.Width(80f));
 
                 GUILayout.FlexibleSpace();
+                if (levelNames.Length > 1)
+                {
+                    EditorGUI.BeginChangeCheck();
+                    viewLevel = EditorGUILayout.Popup(viewLevel, levelNames, EditorStyles.toolbarPopup, GUILayout.Width(170f));
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        selected = -1;
+                        MarkDirty();
+                    }
+                    var shown = pageLevels.Count > 0 && viewLevel < pageLevels[0].Count ? pageLevels[0][viewLevel].Set : null;
+                    using (new EditorGUI.DisabledScope(shown == null || shown == set))
+                        if (GUILayout.Button(new GUIContent("Edit Its Rules", "Open this level's Piece Set in the Workbench."), EditorStyles.toolbarButton, GUILayout.ExpandWidth(false)))
+                            SetPieceSet(shown);
+                }
                 if (GUILayout.Button("Refresh", EditorStyles.toolbarButton, GUILayout.ExpandWidth(false)))
                     MarkDirty();
             }
@@ -235,28 +261,71 @@ namespace Masonry.Editor
             dirty = false;
             error = null;
             page.Clear();
+            pageLevels.Clear();
+            levelOf.Clear();
+            tagsOf.Clear();
+            boundaryDefsOf.Clear();
             boundaryLines.Clear();
             try
             {
-                generator = set.CreateGenerator(out entries, out tags);
-                if (entries.Count == 0)
+                if (set.Pieces.Count == 0)
                 {
                     error = "The set has no pieces yet.";
                     return;
                 }
-                ReadBoundaries();
                 for (int i = 0; i < pageSize; i++)
                 {
-                    var layout = generator.Generate(firstSeed + i);
-                    page.Add(layout);
-                    boundaryLines[layout] = BoundaryLines(layout);
+                    var levels = LevelPlan.Generate(set, firstSeed + i);
+                    pageLevels.Add(levels);
+                    foreach (var level in levels)
+                        levelOf[level.Layout] = level;
                 }
+
+                // Level names come from the first seed; seeds that never reach a level show their first level.
+                var first = pageLevels[0];
+                levelNames = new string[first.Count];
+                for (int l = 0; l < first.Count; l++)
+                    levelNames[l] = $"Level {l + 1}: {first[l].Set.name}";
+                viewLevel = Mathf.Clamp(viewLevel, 0, Mathf.Max(0, first.Count - 1));
+
+                foreach (var levels in pageLevels)
+                {
+                    var level = viewLevel < levels.Count ? levels[viewLevel] : levels[0];
+                    Use(level);
+                    page.Add(level.Layout);
+                    boundaryLines[level.Layout] = BoundaryLines(level.Layout);
+                }
+                Use(pageLevels[0][0]);
             }
             catch (Exception ex)
             {
                 error = ex.Message;
                 UnityEngine.Debug.LogException(ex);
             }
+        }
+
+        // Points the drawing helpers at one level's set, pieces and generator.
+        void Use(LevelLayout level)
+        {
+            ruleSet = level.Set;
+            generator = level.Generator;
+            entries = level.Entries;
+            if (!tagsOf.TryGetValue(level.Set, out tags))
+            {
+                level.Set.CreateGenerator(out _, out tags);
+                tagsOf[level.Set] = tags;
+            }
+            if (!boundaryDefsOf.TryGetValue(level.Set, out boundaryDefs))
+            {
+                ReadBoundaries();
+                boundaryDefsOf[level.Set] = boundaryDefs;
+            }
+        }
+
+        void Use(Layout layout)
+        {
+            if (levelOf.TryGetValue(layout, out var level))
+                Use(level);
         }
 
         // ---- Boundaries on the maps ---------------------------------------------------------------------------
@@ -318,13 +387,13 @@ namespace Masonry.Editor
                 BoundaryStyle style;
                 if (match < 0)
                 {
-                    style = set.BoundaryFor(type, null, outside: true);
+                    style = ruleSet.BoundaryFor(type, null, outside: true);
                 }
                 else
                 {
                     done[match] = true;
                     var otherType = entries[layout.Placements[edges[match].placement].piece].piece.ModuleType;
-                    style = set.BoundaryFor(type, otherType, outside: false);
+                    style = ruleSet.BoundaryFor(type, otherType, outside: false);
                 }
                 if (style != null)
                     lines.Add((e.position - e.right, e.position + e.right, style.Color));
@@ -350,25 +419,27 @@ namespace Masonry.Editor
                 var cell = new Rect(area.x + col * (mapSize + Pad), area.y + row * (mapSize + CaptionHeight + Pad), mapSize, mapSize + CaptionHeight);
                 var mapRect = new Rect(cell.x, cell.y, mapSize, mapSize);
                 var layout = page[i];
+                Use(layout);
 
                 DrawMap(mapRect, layout, i == selected);
 
                 var caption = new Rect(cell.x, cell.y + mapSize + 2f, mapSize, CaptionHeight - 2f);
                 string status = layout.Valid ? "" : "  ✗ rules not met";
-                GUI.Label(caption, $"Seed {layout.Seed}{status}\n{Grown(layout)} pieces, {Count(layout, PieceRole.Cap)} caps, {layout.OpenSockets.Count} open", EditorStyles.miniLabel);
+                GUI.Label(caption, $"Seed {firstSeed + i}{status}\n{Grown(layout)} pieces, {Count(layout, PieceRole.Cap)} caps, {layout.OpenSockets.Count} open", EditorStyles.miniLabel);
 
                 var e = Event.current;
                 if (e.type == EventType.MouseDown && cell.Contains(e.mousePosition))
                 {
                     selected = i;
                     if (e.clickCount == 2)
-                        BuildInScene(layout.Seed);
+                        BuildInScene(firstSeed + i);
                     e.Use();
                     Repaint();
                 }
                 if (mapRect.Contains(e.mousePosition))
                     HoverLabel(mapRect, layout);
             }
+            Use(page[0]);
             Legend();
         }
 
@@ -479,9 +550,11 @@ namespace Masonry.Editor
         IEnumerable<BoundaryStyle> BoundaryStyles()
         {
             var seen = new HashSet<BoundaryStyle>();
-            if (set.DefaultBoundary != null && seen.Add(set.DefaultBoundary))
-                yield return set.DefaultBoundary;
-            foreach (var r in set.BoundaryRules)
+            if (ruleSet == null)
+                yield break;
+            if (ruleSet.DefaultBoundary != null && seen.Add(ruleSet.DefaultBoundary))
+                yield return ruleSet.DefaultBoundary;
+            foreach (var r in ruleSet.BoundaryRules)
                 if (r?.style != null && seen.Add(r.style))
                     yield return r.style;
         }
@@ -503,9 +576,10 @@ namespace Masonry.Editor
             if (selected < 0 || selected >= page.Count)
                 return;
             var layout = page[selected];
+            Use(layout);
 
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField($"Seed {layout.Seed}", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField($"Seed {firstSeed + selected}", EditorStyles.boldLabel);
             EditorGUILayout.LabelField(layout.Valid
                 ? $"Met every rule on try {layout.Attempt + 1}."
                 : $"No try met every rule; this is the closest of {generator.Settings.attempts} (short by {generator.Deficit(layout)} pieces).");
@@ -514,9 +588,9 @@ namespace Masonry.Editor
             {
                 using (new EditorGUI.DisabledScope(EditorApplication.isPlayingOrWillChangePlaymode))
                     if (GUILayout.Button("Build in Scene", GUILayout.Width(120f)))
-                        BuildInScene(layout.Seed);
+                        BuildInScene(firstSeed + selected);
                 if (GUILayout.Button("Copy Seed", GUILayout.Width(90f)))
-                    EditorGUIUtility.systemCopyBuffer = layout.Seed.ToString();
+                    EditorGUIUtility.systemCopyBuffer = (firstSeed + selected).ToString();
                 if (GUILayout.Button("Clear Scene Preview", GUILayout.Width(140f)))
                     ClearScenePreview();
             }
@@ -645,6 +719,7 @@ namespace Masonry.Editor
 
         void RunBatch()
         {
+            Use(pageLevels[0][0]);
             var s = new BatchStats
             {
                 seeds = batchSize,
@@ -704,7 +779,7 @@ namespace Masonry.Editor
         Color PieceColor(Layout layout, Placement p)
         {
             var d = layout.Pieces[p.piece];
-            if (d.role == PieceRole.Start)
+            if (d.role == PieceRole.Start || d.role == PieceRole.Arrival)
                 return StartColor;
             foreach (int t in d.tags)
                 if (t < tags.Count && tags[t] != null)
