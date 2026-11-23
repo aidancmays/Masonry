@@ -14,8 +14,11 @@ namespace Masonry
         [SerializeField] Bounds bounds = new(new Vector3(0f, 2f, 0f), new Vector3(10f, 4f, 10f));
         [Tooltip("What kind of piece this is, for the Piece Set's tag rules (e.g. Objective, Puzzle).")]
         [SerializeField] List<PieceTag> tags = new();
+        [Tooltip("What kind of space this is (Graveyard, Mausoleum...). The Piece Set's boundary rules use it to pick the fence or wall between neighbouring pieces.")]
+        [SerializeField] ModuleType moduleType;
 
         Socket[] sockets;
+        Boundary[] boundaries;
 
         public Bounds Bounds
         {
@@ -24,6 +27,15 @@ namespace Masonry
         }
 
         public List<PieceTag> Tags => tags;
+
+        public ModuleType ModuleType
+        {
+            get => moduleType;
+            set => moduleType = value;
+        }
+
+        /// <summary>Edges whose fence or wall depends on the neighbour.</summary>
+        public Boundary[] Boundaries => boundaries ??= GetComponentsInChildren<Boundary>(true);
 
         /// <summary>Sockets in hierarchy order. That order is the socket index the generator uses.</summary>
         public Socket[] Sockets => sockets ??= GetComponentsInChildren<Socket>(true);
@@ -35,7 +47,11 @@ namespace Masonry
         public int Depth { get; internal set; }
 
         /// <summary>Forgets cached sockets, after adding or removing sockets by script.</summary>
-        public void RefreshSockets() => sockets = null;
+        public void RefreshSockets()
+        {
+            sockets = null;
+            boundaries = null;
+        }
 
         /// <summary>Sets the bounds to cover every renderer under the piece, in local space.</summary>
         public void FitBoundsToRenderers()

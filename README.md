@@ -7,7 +7,7 @@ so a multiplayer game only has to share one integer.
 ## Install
 
 ```json
-"com.aidancmays.masonry": "https://github.com/aidancmays/Masonry.git#v0.2.0"
+"com.aidancmays.masonry": "https://github.com/aidancmays/Masonry.git#v0.3.0"
 ```
 
 No dependencies besides Unity 6.3.
@@ -20,6 +20,9 @@ No dependencies besides Unity 6.3.
 | `Socket` | Component on a child of a piece: a connection point. Sits on a side of the bounds, **blue axis pointing out**, up axis up. |
 | `SocketType` | Asset (Create > Masonry > Socket Type). Sockets join when their types match or one lists the other in *Connects To*. |
 | `PieceTag` | Asset (Create > Masonry > Piece Tag). A kind of piece (Objective, Puzzle, Combat...). A piece can carry several. |
+| `ModuleType` | Asset (Create > Masonry > Module Type). What kind of space a piece is (Graveyard, Mausoleum...), with a priority. |
+| `BoundaryStyle` | Asset (Create > Masonry > Boundary Style). A kind of edge: Fence, Wall, Hedge... |
+| `Boundary` | Component on one stretch of a piece's edge holding the art for each style; the layout decides which one shows. |
 | `PieceSet` | Asset (Create > Masonry > Piece Set). The rules for one kind of level: pieces with role, weight, min/max count and min depth; tag rules; layout size. |
 | `LayoutBuilder` | Component in the scene. `Build(seed)` instantiates the layout under its transform. |
 | `LayoutGenerator` | The pure algorithm behind it. Works on plain data, so it runs in tests or on a server without instantiating anything. |
@@ -70,6 +73,22 @@ Tagged caps count too, as dead-end rooms.
 
 Select a `LayoutBuilder` to preview: set a seed and press **Build**, **Next Seed** or **Random Seed**. Previews are
 never saved with the scene and are cleared before Play mode.
+
+## Boundaries between modules
+
+Pieces that sit side by side would each draw their own fence, so walls doubled up. Instead, give each piece a
+*Module Type* and put a `Boundary` on every edge cell (the Piece inspector's grid has **Add Boundaries**), with the
+art for each style under it: e.g. a Fence child and a Wall child. On an edge with a socket, leave the opening clear
+in the art and put the filler in *Closed Opening*; it shows only if the socket ends up unjoined.
+
+The Piece Set's *Boundaries* table says which style goes where two module types meet (either way round), or where a
+module meets the edge of the layout (*Meets* left empty). An empty style means nothing: the two run into each other.
+Anything not listed uses *Default*. After every build, boundaries that face each other are paired and the style is
+drawn by one side only: the side that has art for it, then the module with the higher priority, then the piece
+placed first. Example: Graveyard + Graveyard = nothing, Mausoleum + Graveyard = Fence, Mausoleum + edge = Wall.
+
+The Workbench maps draw the chosen boundaries in each style's colour. `Boundary.Style`, `Drawn` and `Neighbour`
+tell game code what was picked; `BoundaryResolver.Resolve` runs it on pieces placed some other way.
 
 ## Building at runtime
 

@@ -18,6 +18,7 @@ namespace Masonry.Editor
             serializedObject.Update();
             EditorGUILayout.PropertyField(serializedObject.FindProperty("bounds"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("tags"));
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("moduleType"));
             serializedObject.ApplyModifiedProperties();
 
             var piece = (Piece)target;
@@ -120,6 +121,50 @@ namespace Masonry.Editor
                 SlotButton(piece, Slot(rect, width + 1, depth - z), Side.East, z);
                 SlotButton(piece, Slot(rect, 0, depth - z), Side.West, z);
             }
+
+            int boundaryCount = piece.GetComponentsInChildren<Boundary>(true).Length;
+            int edgeCount = 2 * (width + depth);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.LabelField($"Boundaries: {boundaryCount} of {edgeCount} edge cells", EditorStyles.miniLabel);
+                using (new EditorGUI.DisabledScope(boundaryCount >= edgeCount))
+                    if (GUILayout.Button(new GUIContent("Add Boundaries", "Adds a Boundary on every edge cell that has none. Put each style's art under them."), GUILayout.Width(110f)))
+                        AddBoundaries(piece, width, depth);
+            }
+        }
+
+        static void AddBoundaries(Piece piece, int width, int depth)
+        {
+            var existing = piece.GetComponentsInChildren<Boundary>(true);
+            void Add(Side side, int index)
+            {
+                EdgeSlot(piece.Bounds, side, index, out var position, out float yaw);
+                foreach (var b in existing)
+                {
+                    var p = piece.transform.InverseTransformPoint(b.transform.position);
+                    if (new Vector2(p.x - position.x, p.z - position.z).sqrMagnitude < 0.01f)
+                        return;
+                }
+                var go = new GameObject($"Boundary {side} {index + 1}");
+                Undo.RegisterCreatedObjectUndo(go, "Add Boundaries");
+                go.transform.SetParent(piece.transform, false);
+                go.transform.SetLocalPositionAndRotation(position, Quaternion.Euler(0f, yaw, 0f));
+                go.AddComponent<Boundary>().Length = CellSize;
+            }
+
+            for (int x = 0; x < width; x++)
+            {
+                Add(Side.North, x);
+                Add(Side.South, x);
+            }
+            for (int z = 0; z < depth; z++)
+            {
+                Add(Side.East, z);
+                Add(Side.West, z);
+            }
+            piece.RefreshSockets();
+            EditorUtility.SetDirty(piece);
+            GUIUtility.ExitGUI();
         }
 
         static Rect Slot(Rect area, int column, int row) => new(area.x + column * SlotSize, area.y + row * SlotSize, SlotSize, SlotSize);

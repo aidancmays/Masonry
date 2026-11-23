@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.0] - 2026-11-23
+
+- Module types (`ModuleType`), boundary styles (`BoundaryStyle`) and per-edge `Boundary` components. A Piece Set's
+  boundary rules pick the style between two module types or at the edge of the layout, and each shared edge is drawn
+  by one side only, so walls are no longer doubled. `BoundaryResolver` runs after every build.
+- Boundaries close an unjoined socket's opening with an optional *Closed Opening* object per style.
+- Piece inspector: module type, and **Add Boundaries** on every edge cell of the grid footprint.
+- Piece Set inspector and Workbench: boundary rules table; maps show module colours and boundary lines.
+
 ## [0.2.0] - 2026-11-22
 
 - Piece tags (`PieceTag`) and tag rules on a Piece Set: min/max count (exact numbers), min depth and min spacing

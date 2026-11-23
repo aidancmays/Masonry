@@ -42,7 +42,21 @@ namespace Masonry
             [Min(0)] public int minSpacing;
         }
 
+        /// <summary>The boundary between two module types, or between one and the edge of the layout.</summary>
+        [Serializable]
+        public sealed class BoundaryRule
+        {
+            public ModuleType a;
+            [Tooltip("Empty = the edge of the layout (nothing on the other side).")]
+            public ModuleType b;
+            [Tooltip("Empty = no boundary: the two run into each other.")]
+            public BoundaryStyle style;
+        }
+
         [SerializeField] LayoutSettings settings = LayoutSettings.Default;
+        [Tooltip("Boundary for meetings no rule covers. Empty = none.")]
+        [SerializeField] BoundaryStyle defaultBoundary;
+        [SerializeField] List<BoundaryRule> boundaryRules = new();
         [Tooltip("Cell size the pieces are designed on, in metres. Only used by the editor tools (footprints, socket placement). 0 = no grid.")]
         [SerializeField, Min(0f)] float gridSize;
         [SerializeField] List<Entry> pieces = new();
@@ -62,6 +76,36 @@ namespace Masonry
 
         public List<Entry> Pieces => pieces;
         public List<TagRuleEntry> TagRules => tagRules;
+        public List<BoundaryRule> BoundaryRules => boundaryRules;
+
+        public BoundaryStyle DefaultBoundary
+        {
+            get => defaultBoundary;
+            set => defaultBoundary = value;
+        }
+
+        /// <summary>
+        /// The boundary between module types a and b; with <paramref name="outside"/>, between a and the edge of the
+        /// layout. Rules match in either order; the first match wins; otherwise the default.
+        /// </summary>
+        public BoundaryStyle BoundaryFor(ModuleType a, ModuleType b, bool outside)
+        {
+            foreach (var r in boundaryRules)
+            {
+                if (r == null)
+                    continue;
+                if (outside)
+                {
+                    if (r.b == null && r.a == a)
+                        return r.style;
+                }
+                else if ((r.a == a && r.b == b) || (r.a == b && r.b == a))
+                {
+                    return r.style;
+                }
+            }
+            return defaultBoundary;
+        }
 
         /// <summary>Makes a generator for this set. Entries without a piece are skipped.</summary>
         public LayoutGenerator CreateGenerator(out List<Entry> used) => CreateGenerator(out used, out _);

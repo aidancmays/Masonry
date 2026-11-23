@@ -36,6 +36,8 @@ namespace Masonry.Editor
         List<PieceSet.Entry> entries = new();
         List<PieceTag> tags = new();
         readonly List<Layout> page = new();
+        readonly Dictionary<Layout, List<(Vector3 a, Vector3 b, Color color)>> boundaryLines = new();
+        List<(Vector3 position, float yaw, float length)>[] boundaryDefs = Array.Empty<List<(Vector3, float, float)>>();
         BatchStats stats;
 
         [MenuItem("Window/Masonry/Workbench")]
@@ -233,6 +235,7 @@ namespace Masonry.Editor
             dirty = false;
             error = null;
             page.Clear();
+            boundaryLines.Clear();
             try
             {
                 generator = set.CreateGenerator(out entries, out tags);
@@ -241,14 +244,92 @@ namespace Masonry.Editor
                     error = "The set has no pieces yet.";
                     return;
                 }
+                ReadBoundaries();
                 for (int i = 0; i < pageSize; i++)
-                    page.Add(generator.Generate(firstSeed + i));
+                {
+                    var layout = generator.Generate(firstSeed + i);
+                    page.Add(layout);
+                    boundaryLines[layout] = BoundaryLines(layout);
+                }
             }
             catch (Exception ex)
             {
                 error = ex.Message;
                 UnityEngine.Debug.LogException(ex);
             }
+        }
+
+        // ---- Boundaries on the maps ---------------------------------------------------------------------------
+
+        // Boundary positions of each piece prefab, in piece space.
+        void ReadBoundaries()
+        {
+            boundaryDefs = new List<(Vector3, float, float)>[entries.Count];
+            for (int i = 0; i < entries.Count; i++)
+            {
+                var piece = entries[i].piece;
+                piece.RefreshSockets();
+                var list = new List<(Vector3, float, float)>();
+                foreach (var b in piece.Boundaries)
+                {
+                    var t = b.transform;
+                    var forward = piece.transform.InverseTransformDirection(t.forward);
+                    list.Add((piece.transform.InverseTransformPoint(t.position), Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg, b.Length));
+                }
+                boundaryDefs[i] = list;
+            }
+        }
+
+        // Same pairing and rules as BoundaryResolver, drawn as coloured edges. Edges with no boundary are left out.
+        List<(Vector3, Vector3, Color)> BoundaryLines(Layout layout)
+        {
+            var edges = new List<(Vector3 position, Vector3 forward, Vector3 right, int placement)>();
+            for (int i = 0; i < layout.Placements.Count; i++)
+            {
+                var p = layout.Placements[i];
+                foreach (var (position, yaw, length) in boundaryDefs[p.piece])
+                {
+                    var rot = Quaternion.Euler(0f, p.yaw + yaw, 0f);
+                    edges.Add((p.position + p.Rotation * position, rot * Vector3.forward, rot * Vector3.right * (length / 2f), i));
+                }
+            }
+
+            var lines = new List<(Vector3, Vector3, Color)>();
+            var done = new bool[edges.Count];
+            for (int i = 0; i < edges.Count; i++)
+            {
+                if (done[i])
+                    continue;
+                done[i] = true;
+                var e = edges[i];
+                var type = entries[layout.Placements[e.placement].piece].piece.ModuleType;
+                int match = -1;
+                for (int k = i + 1; k < edges.Count && match < 0; k++)
+                {
+                    var o = edges[k];
+                    if (done[k] || o.placement == e.placement)
+                        continue;
+                    var d = o.position - e.position;
+                    d.y = 0f;
+                    if (d.sqrMagnitude < 0.0025f && Vector3.Dot(o.forward, e.forward) < -0.99f)
+                        match = k;
+                }
+
+                BoundaryStyle style;
+                if (match < 0)
+                {
+                    style = set.BoundaryFor(type, null, outside: true);
+                }
+                else
+                {
+                    done[match] = true;
+                    var otherType = entries[layout.Placements[edges[match].placement].piece].piece.ModuleType;
+                    style = set.BoundaryFor(type, otherType, outside: false);
+                }
+                if (style != null)
+                    lines.Add((e.position - e.right, e.position + e.right, style.Color));
+            }
+            return lines;
         }
 
         // ---- Maps ---------------------------------------------------------------------------------------------
@@ -319,6 +400,15 @@ namespace Masonry.Editor
                 Handles.DrawAAPolyLine(1.5f, outline);
             }
 
+            if (boundaryLines.TryGetValue(layout, out var lines))
+            {
+                foreach (var (a, b, color) in lines)
+                {
+                    Handles.color = color;
+                    Handles.DrawAAPolyLine(3f, toScreen(a), toScreen(b));
+                }
+            }
+
             Handles.color = new Color(1f, 1f, 1f, 0.55f);
             foreach (var c in layout.Connections)
             {
@@ -378,10 +468,22 @@ namespace Masonry.Editor
                     if (tag != null)
                         Swatch(tag.Color, tag.name);
                 Swatch(CapColor, "Cap");
+                foreach (var style in BoundaryStyles())
+                    Swatch(style.Color, style.name);
                 Swatch(new Color(1f, 0.25f, 0.2f), "Open socket");
                 GUILayout.FlexibleSpace();
             }
             EditorGUILayout.LabelField("Click a map to select it, double-click to build it in the scene. Lines join connected pieces.", EditorStyles.miniLabel);
+        }
+
+        IEnumerable<BoundaryStyle> BoundaryStyles()
+        {
+            var seen = new HashSet<BoundaryStyle>();
+            if (set.DefaultBoundary != null && seen.Add(set.DefaultBoundary))
+                yield return set.DefaultBoundary;
+            foreach (var r in set.BoundaryRules)
+                if (r?.style != null && seen.Add(r.style))
+                    yield return r.style;
         }
 
         static void Swatch(Color color, string label)
@@ -611,6 +713,9 @@ namespace Masonry.Editor
                 return RequiredColor;
             if (d.role == PieceRole.Cap)
                 return CapColor;
+            var module = p.piece < entries.Count ? entries[p.piece].piece.ModuleType : null;
+            if (module != null)
+                return module.Color;
             // Normal pieces: muted blues, a slightly different shade per piece so repeats are visible.
             float hue = 0.55f + (p.piece * 0.07f % 0.12f);
             return Color.HSVToRGB(hue, 0.3f, 0.55f + (p.piece % 3) * 0.08f);

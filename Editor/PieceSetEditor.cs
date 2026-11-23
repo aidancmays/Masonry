@@ -13,6 +13,15 @@ namespace Masonry.Editor
         static readonly string[] TagColumns = { "Tag", "Min", "Max", "Depth", "Spacing" };
         static readonly float[] TagWidths = { 0.4f, 0.15f, 0.15f, 0.15f, 0.15f };
 
+        static readonly string[] BoundaryColumns = { "Module", "Meets", "Boundary" };
+        static readonly float[] BoundaryWidths = { 0.34f, 0.34f, 0.32f };
+        static readonly string[] BoundaryTips =
+        {
+            "A module type.",
+            "The module type on the other side. Empty = the edge of the layout.",
+            "Boundary style drawn between them. Empty = none: they run into each other.",
+        };
+
         static readonly string[] PieceTips =
         {
             "The piece prefab.",
@@ -34,6 +43,7 @@ namespace Masonry.Editor
 
         ReorderableList pieceList;
         ReorderableList tagList;
+        ReorderableList boundaryList;
 
         void OnEnable()
         {
@@ -49,6 +59,13 @@ namespace Masonry.Editor
                 drawHeaderCallback = r => Header(r, TagColumns, TagWidths, TagTips, 14f),
                 drawElementCallback = (r, i, _, _) => Row(r, tagList.serializedProperty.GetArrayElementAtIndex(i),
                     new[] { "tag", "minCount", "maxCount", "minDepth", "minSpacing" }, TagWidths),
+                elementHeight = EditorGUIUtility.singleLineHeight + 4f,
+            };
+            boundaryList = new ReorderableList(serializedObject, serializedObject.FindProperty("boundaryRules"), true, true, true, true)
+            {
+                drawHeaderCallback = r => Header(r, BoundaryColumns, BoundaryWidths, BoundaryTips, 14f),
+                drawElementCallback = (r, i, _, _) => Row(r, boundaryList.serializedProperty.GetArrayElementAtIndex(i),
+                    new[] { "a", "b", "style" }, BoundaryWidths),
                 elementHeight = EditorGUIUtility.singleLineHeight + 4f,
             };
         }
@@ -82,6 +99,10 @@ namespace Masonry.Editor
 
             EditorGUILayout.LabelField("Tag Rules", EditorStyles.boldLabel);
             tagList.DoLayoutList();
+
+            EditorGUILayout.LabelField(new GUIContent("Boundaries", "Which boundary goes where two module types meet. Rules match either way round; the first match wins."), EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("defaultBoundary"), new GUIContent("Default", "Boundary for meetings no rule covers. Empty = none."));
+            boundaryList.DoLayoutList();
 
             serializedObject.ApplyModifiedProperties();
 

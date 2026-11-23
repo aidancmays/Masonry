@@ -78,6 +78,8 @@ namespace Masonry
                 b.SetJoined(a);
             }
 
+            BoundaryResolver.Resolve(built, pieceSet);
+
             Layout = layout;
             Built?.Invoke(this);
             return layout;
