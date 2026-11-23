@@ -14,6 +14,8 @@ namespace Masonry
         public const string Main = "main";
         /// <summary>Set on levels reached through a <see cref="LevelLink"/>.</summary>
         public const string Linked = "linked";
+        /// <summary>Set on levels that may still link to a level below (see <see cref="BuildOptions.maxLinkDepth"/>). Give link pieces this condition so they only appear when there is somewhere to go.</summary>
+        public const string Links = "links";
 
         public static bool Match(string condition, ICollection<string> flags)
         {

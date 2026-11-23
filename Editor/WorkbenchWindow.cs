@@ -11,7 +11,7 @@ namespace Masonry.Editor
     /// top-down maps every time a rule changes. Run a batch of seeds for statistics, and build any seed into the
     /// scene to look at it in 3D.
     /// </summary>
-    sealed class WorkbenchWindow : EditorWindow
+    public sealed class WorkbenchWindow : EditorWindow
     {
         const string PreviewName = "Masonry Preview";
         const float CaptionHeight = 34f;
@@ -26,6 +26,8 @@ namespace Masonry.Editor
         [SerializeField] float rulesWidth = 380f;
         [SerializeField] int viewLevel;
         [SerializeField] string flagsText = "";
+        [NonSerialized] BuildOptions externalOptions;
+        [NonSerialized] string externalLabel;
 
         UnityEditor.Editor setEditor;
         Vector2 rulesScroll;
@@ -60,6 +62,19 @@ namespace Masonry.Editor
             if (set != null)
                 window.SetPieceSet(set);
             window.Show();
+        }
+
+        /// <summary>
+        /// Opens the Workbench on a set with full build options, e.g. from a game's level settings. The label names
+        /// what is being previewed; the toolbar's Flags box is ignored until the preview is cleared.
+        /// </summary>
+        public static void Open(PieceSet set, BuildOptions options, string label)
+        {
+            Open(set);
+            var window = GetWindow<WorkbenchWindow>();
+            window.externalOptions = options;
+            window.externalLabel = label;
+            window.MarkDirty();
         }
 
         public static bool IsShowing(PieceSet set)
@@ -109,6 +124,11 @@ namespace Masonry.Editor
 
         void SetPieceSet(PieceSet s)
         {
+            if (s != set)
+            {
+                externalOptions = null;
+                externalLabel = null;
+            }
             set = s;
             viewLevel = 0;
             levelNames = Array.Empty<string>();
@@ -204,14 +224,29 @@ namespace Masonry.Editor
                 mapSize = GUILayout.HorizontalSlider(mapSize, 120f, 520f, GUILayout.Width(80f));
 
                 GUILayout.Space(8f);
-                GUILayout.Label(new GUIContent("Flags", "Build flags for entry conditions, comma separated, as the game would pass them (e.g. exit-gate)."), EditorStyles.miniLabel, GUILayout.ExpandWidth(false));
-                EditorGUI.BeginChangeCheck();
-                flagsText = EditorGUILayout.DelayedTextField(flagsText, EditorStyles.toolbarTextField, GUILayout.Width(120f));
-                if (EditorGUI.EndChangeCheck())
+                if (externalOptions != null)
                 {
-                    selected = -1;
-                    stats = null;
-                    MarkDirty();
+                    GUILayout.Label(new GUIContent(externalLabel, "Previewing with these build options (flags, link depth, overrides)."), EditorStyles.miniBoldLabel, GUILayout.ExpandWidth(false));
+                    if (GUILayout.Button("\u2715", EditorStyles.toolbarButton, GUILayout.Width(22f)))
+                    {
+                        externalOptions = null;
+                        externalLabel = null;
+                        selected = -1;
+                        stats = null;
+                        MarkDirty();
+                    }
+                }
+                else
+                {
+                    GUILayout.Label(new GUIContent("Flags", "Build flags for entry conditions, comma separated, as the game would pass them (e.g. exit-gate)."), EditorStyles.miniLabel, GUILayout.ExpandWidth(false));
+                    EditorGUI.BeginChangeCheck();
+                    flagsText = EditorGUILayout.DelayedTextField(flagsText, EditorStyles.toolbarTextField, GUILayout.Width(120f));
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        selected = -1;
+                        stats = null;
+                        MarkDirty();
+                    }
                 }
 
                 GUILayout.FlexibleSpace();
@@ -240,6 +275,8 @@ namespace Masonry.Editor
             selected = -1;
             MarkDirty();
         }
+
+        BuildOptions CurrentOptions() => externalOptions ?? new BuildOptions(Flags.Parse(flagsText));
 
         void Splitter()
         {
@@ -287,7 +324,7 @@ namespace Masonry.Editor
                 }
                 for (int i = 0; i < pageSize; i++)
                 {
-                    var levels = LevelPlan.Generate(set, firstSeed + i, Flags.Parse(flagsText));
+                    var levels = LevelPlan.Generate(set, firstSeed + i, CurrentOptions());
                     pageLevels.Add(levels);
                     foreach (var level in levels)
                         levelOf[level.Layout] = level;
@@ -656,7 +693,7 @@ namespace Masonry.Editor
                 builder.PieceSet = set;
             }
 
-            builder.BuildPreview(seed, Flags.Parse(flagsText));
+            builder.BuildPreview(seed, CurrentOptions());
             Selection.activeGameObject = builder.gameObject;
 
             var bounds = new Bounds(builder.transform.position, Vector3.one);

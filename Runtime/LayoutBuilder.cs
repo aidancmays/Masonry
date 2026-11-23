@@ -49,13 +49,20 @@ namespace Masonry
         /// Like <see cref="Build(int)"/>, with flags that Piece Set entries can require in their condition, such as
         /// which exit this floor uses. Every machine must pass the same flags to get the same layout.
         /// </summary>
-        public Layout Build(int seed, IEnumerable<string> flags) => Build(seed, flags, preview: false);
+        public Layout Build(int seed, IEnumerable<string> flags) => Build(seed, new BuildOptions(flags), preview: false);
+
+        /// <summary>Like <see cref="Build(int)"/>, with flags, link depth and the first level's overrides.</summary>
+        public Layout Build(int seed, BuildOptions options) => Build(seed, options, preview: false);
 
         /// <summary>Like <see cref="Build(int)"/>, but the pieces are never saved with the scene. Used by the editor.</summary>
-        public Layout BuildPreview(int seed, IEnumerable<string> flags = null) => Build(seed, flags, preview: true);
+        public Layout BuildPreview(int seed, IEnumerable<string> flags = null) => Build(seed, new BuildOptions(flags), preview: true);
 
-        Layout Build(int seed, IEnumerable<string> flags, bool preview)
+        /// <summary>Preview with full build options.</summary>
+        public Layout BuildPreview(int seed, BuildOptions options) => Build(seed, options, preview: true);
+
+        Layout Build(int seed, BuildOptions options, bool preview)
         {
+            options ??= new BuildOptions();
             Clear();
             if (pieceSet == null)
             {
@@ -63,8 +70,8 @@ namespace Masonry
                 return null;
             }
 
-            Flags = Masonry.Flags.With(flags, null);
-            levels.AddRange(LevelPlan.Generate(pieceSet, seed, flags));
+            Flags = Masonry.Flags.With(options.flags, null);
+            levels.AddRange(LevelPlan.Generate(pieceSet, seed, options));
             for (int l = 0; l < levels.Count; l++)
             {
                 var level = levels[l];

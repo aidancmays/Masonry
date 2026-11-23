@@ -7,7 +7,7 @@ so a multiplayer game only has to share one integer.
 ## Install
 
 ```json
-"com.aidancmays.masonry": "https://github.com/aidancmays/Masonry.git#v0.6.0"
+"com.aidancmays.masonry": "https://github.com/aidancmays/Masonry.git#v0.7.0"
 ```
 
 No dependencies besides Unity 6.3.
@@ -126,6 +126,14 @@ the main seed. Links can chain further down (up to 4 deep, and a set is never bu
 are resolved per level. In the Workbench, the level picker in the toolbar shows any level of each seed, and *Edit
 Its Rules* opens that level's set. The same Piece Set can also be used on its own (its Start piece) for floors that
 begin in it.
+
+## Build options
+
+Games that reuse one set across many levels pass `BuildOptions` (`builder.Build(seed, options)`,
+`LevelPlan.Generate(set, seed, options)`): build flags, `maxLinkDepth` (how many linked levels deep to build; 0 =
+none), and overrides for the first level's piece count and tag counts (e.g. exactly 4 objectives on this level).
+Levels that may still link further get the `links` flag, so link pieces (a crypt entrance) can require it and
+disappear when there is nothing below. `WorkbenchWindow.Open(set, options, label)` previews a set with options.
 
 ## Building at runtime
 

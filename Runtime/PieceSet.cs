@@ -145,7 +145,8 @@ namespace Masonry
         public LayoutGenerator CreateGenerator(out List<Entry> used, ICollection<string> flags) => CreateGenerator(out used, out _, flags);
 
         /// <summary>Makes a generator for this set, also returning the tag behind each tag id.</summary>
-        public LayoutGenerator CreateGenerator(out List<Entry> used, out List<PieceTag> tags, ICollection<string> flags = null)
+        /// <param name="overrides">Optional piece count and tag count overrides (the first level of a build).</param>
+        public LayoutGenerator CreateGenerator(out List<Entry> used, out List<PieceTag> tags, ICollection<string> flags = null, BuildOptions overrides = null)
         {
             used = new List<Entry>();
             var types = new List<SocketType>();
@@ -171,6 +172,11 @@ namespace Masonry
             }
 
             var rules = new List<TagRule>();
+            var overridden = new HashSet<PieceTag>();
+            if (overrides != null)
+                foreach (var o in overrides.tagCounts)
+                    if (o.tag != null)
+                        overridden.Add(o.tag);
             foreach (var r in tagRules)
             {
                 if (r?.tag == null)
@@ -184,7 +190,27 @@ namespace Masonry
                     minSpacing = r.minSpacing,
                     depthStep = r.depthStep,
                 });
+                if (overridden.Contains(r.tag))
+                {
+                    var o = overrides.tagCounts.Find(x => x.tag == r.tag);
+                    var last = rules[rules.Count - 1];
+                    last.minCount = o.minCount;
+                    last.maxCount = o.maxCount;
+                    rules[rules.Count - 1] = last;
+                    overridden.Remove(r.tag);
+                }
             }
+            foreach (var tag in overridden)
+            {
+                var o = overrides.tagCounts.Find(x => x.tag == tag);
+                rules.Add(new TagRule { tag = TagId(tag), minCount = o.minCount, maxCount = o.maxCount });
+            }
+
+            var layoutSettings = settings;
+            if (overrides != null && overrides.minPieces > 0)
+                layoutSettings.minPieces = overrides.minPieces;
+            if (overrides != null && overrides.maxPieces > 0)
+                layoutSettings.maxPieces = Mathf.Max(overrides.maxPieces, layoutSettings.minPieces);
 
             int[] TagIds(List<PieceTag> list)
             {
@@ -217,7 +243,7 @@ namespace Masonry
             }
 
             tags = tagList;
-            return new LayoutGenerator(definitions, settings, (a, b) => SocketType.CanJoin(types[a], types[b]), rules, spacing, deadEndRule);
+            return new LayoutGenerator(definitions, layoutSettings, (a, b) => SocketType.CanJoin(types[a], types[b]), rules, spacing, deadEndRule);
         }
     }
 }

@@ -30,15 +30,28 @@ namespace Masonry
         /// <param name="flags">Build flags for entry conditions (see <see cref="Masonry.Flags"/>). Every level also gets
         /// "main" or "linked".</param>
         public static List<LevelLayout> Generate(PieceSet set, int seed, IEnumerable<string> flags = null, int maxDepth = 4)
+            => Generate(set, seed, new BuildOptions(flags, maxDepth));
+
+        /// <summary>Builds the stack with per-build options: flags, link depth and the first level's overrides.</summary>
+        public static List<LevelLayout> Generate(PieceSet set, int seed, BuildOptions options)
         {
             var levels = new List<LevelLayout>();
             if (set == null)
                 return levels;
+            options ??= new BuildOptions();
+            int maxDepth = options.maxLinkDepth;
 
-            var mainFlags = Masonry.Flags.With(flags, Masonry.Flags.Main);
-            var linkedFlags = Masonry.Flags.With(flags, Masonry.Flags.Linked);
+            // Every level gets "main" or "linked", plus "links" while it may still lead further down.
+            HashSet<string> LevelFlags(int depth)
+            {
+                var f = Masonry.Flags.With(options.flags, depth == 0 ? Masonry.Flags.Main : Masonry.Flags.Linked);
+                if (depth < maxDepth)
+                    f.Add(Masonry.Flags.Links);
+                return f;
+            }
 
-            var generator = set.CreateGenerator(out var entries, mainFlags);
+            var mainFlags = LevelFlags(0);
+            var generator = set.CreateGenerator(out var entries, out _, mainFlags, options);
             levels.Add(new LevelLayout
             {
                 Set = set,
@@ -79,6 +92,7 @@ namespace Masonry
                     }
                 }
 
+                var linkedFlags = LevelFlags(from.Depth + 1);
                 foreach (var target in order)
                 {
                     done.Add(target);

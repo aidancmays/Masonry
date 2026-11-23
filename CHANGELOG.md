@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0] - 2026-11-23
+
+- `BuildOptions`: build flags, `maxLinkDepth`, and first-level overrides for piece count and tag counts.
+  `LayoutBuilder.Build(seed, options)`, `BuildPreview(seed, options)`, `LevelPlan.Generate(set, seed, options)`,
+  `PieceSet.CreateGenerator(..., flags, overrides)`.
+- `links` flag on levels that may still link further, so link pieces only appear when there is a level below.
+- `WorkbenchWindow` is public, with `Open(set, options, label)` to preview a game's level settings.
+
 ## [0.6.0] - 2026-11-23
 
 - Spacing rules: pieces with any of a set of tags (e.g. Entrance, Objective, Exit) keep a minimum number of steps
