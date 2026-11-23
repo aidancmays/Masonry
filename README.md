@@ -7,7 +7,7 @@ so a multiplayer game only has to share one integer.
 ## Install
 
 ```json
-"com.aidancmays.masonry": "https://github.com/aidancmays/Masonry.git#v0.4.0"
+"com.aidancmays.masonry": "https://github.com/aidancmays/Masonry.git#v0.5.0"
 ```
 
 No dependencies besides Unity 6.3.
@@ -66,6 +66,15 @@ Add each prefab to a Piece Set and choose its role:
 are retried with the next seeded try). *Max Count* limits it (0 = no limit). *Min Depth* keeps it at least that many
 steps from the start piece, so an exit can be kept far from the entrance. A required piece may have weight 0: it is
 then only placed when the budget runs low, which tends to put it near the end of a branch.
+
+### Conditions and build flags
+
+A build can be given flags: plain words such as `exit-gate` or `floor-3` (`builder.Build(seed, flags)`). An entry's
+*Only If* condition lists the flags it needs, comma separated, with `!flag` for "only without". So one Piece Set
+can carry several exits and let the game pick one per floor. Every build also has `main` (the level the build
+starts from) or `linked` (a level reached through a Level Link): a crypt's exit can say `main` so it only appears
+when the crypt is the floor itself, not when it sits under a graveyard. All machines must pass the same flags.
+The Workbench has a *Flags* box to preview them.
 
 ### Tag rules
 

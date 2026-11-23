@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0] - 2026-11-23
+
+- Build flags and entry conditions: `PieceSet.Entry.condition` ("exit-gate", "!night", "main, floor-3"...) picks
+  which entries take part; `LayoutBuilder.Build(seed, flags)`, `LevelPlan.Generate(set, seed, flags)`,
+  `PieceSet.CreateGenerator(..., flags)`. Levels get `main` or `linked` automatically. `Flags` helper.
+- Piece Set table: *Only If* column. Workbench: *Flags* box in the toolbar.
+
 ## [0.4.0] - 2026-11-23
 
 - Levels: `LevelLink` on a piece leads into a level built from another Piece Set (e.g. crypt stairs down to the

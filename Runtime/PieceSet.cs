@@ -25,6 +25,11 @@ namespace Masonry
             [Min(0)] public int maxCount;
             [Tooltip("Fewest steps from the start piece before this piece may appear. Use it to keep an exit far from the entrance.")]
             [Min(0)] public int minDepth;
+            [Tooltip("Only use this piece when the build has this flag; '!flag' = only when it does not. Several, comma separated, must all hold. Empty = always. Every build has 'main' (the level the build starts from) or 'linked' (a level reached through a Level Link), plus any flags the game passes in.")]
+            public string condition;
+
+            /// <summary>Whether this entry takes part in a build with these flags.</summary>
+            public bool Applies(ICollection<string> flags) => Flags.Match(condition, flags);
         }
 
         /// <summary>Counts for every piece carrying a tag, whichever piece it is.</summary>
@@ -110,8 +115,11 @@ namespace Masonry
         /// <summary>Makes a generator for this set. Entries without a piece are skipped.</summary>
         public LayoutGenerator CreateGenerator(out List<Entry> used) => CreateGenerator(out used, out _);
 
+        /// <summary>Makes a generator for this set with only the entries whose condition holds for these flags.</summary>
+        public LayoutGenerator CreateGenerator(out List<Entry> used, ICollection<string> flags) => CreateGenerator(out used, out _, flags);
+
         /// <summary>Makes a generator for this set, also returning the tag behind each tag id.</summary>
-        public LayoutGenerator CreateGenerator(out List<Entry> used, out List<PieceTag> tags)
+        public LayoutGenerator CreateGenerator(out List<Entry> used, out List<PieceTag> tags, ICollection<string> flags = null)
         {
             used = new List<Entry>();
             var types = new List<SocketType>();
@@ -153,7 +161,7 @@ namespace Masonry
 
             foreach (var e in pieces)
             {
-                if (e == null || e.piece == null)
+                if (e == null || e.piece == null || !e.Applies(flags))
                     continue;
                 var d = e.piece.ToDefinition(TypeId, TagId);
                 d.role = e.role;

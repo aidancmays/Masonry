@@ -39,13 +39,22 @@ namespace Masonry
 
         readonly List<LevelLayout> levels = new();
 
+        /// <summary>Flags of the last build (see <see cref="Masonry.Flags"/>).</summary>
+        public IReadOnlyCollection<string> Flags { get; private set; } = Array.Empty<string>();
+
         /// <summary>Removes any previous build and builds the layout for this seed, with every linked level.</summary>
-        public Layout Build(int seed) => Build(seed, preview: false);
+        public Layout Build(int seed) => Build(seed, null, preview: false);
 
-        /// <summary>Like <see cref="Build"/>, but the pieces are never saved with the scene. Used by the inspector.</summary>
-        public Layout BuildPreview(int seed) => Build(seed, preview: true);
+        /// <summary>
+        /// Like <see cref="Build(int)"/>, with flags that Piece Set entries can require in their condition, such as
+        /// which exit this floor uses. Every machine must pass the same flags to get the same layout.
+        /// </summary>
+        public Layout Build(int seed, IEnumerable<string> flags) => Build(seed, flags, preview: false);
 
-        Layout Build(int seed, bool preview)
+        /// <summary>Like <see cref="Build(int)"/>, but the pieces are never saved with the scene. Used by the editor.</summary>
+        public Layout BuildPreview(int seed, IEnumerable<string> flags = null) => Build(seed, flags, preview: true);
+
+        Layout Build(int seed, IEnumerable<string> flags, bool preview)
         {
             Clear();
             if (pieceSet == null)
@@ -54,7 +63,8 @@ namespace Masonry
                 return null;
             }
 
-            levels.AddRange(LevelPlan.Generate(pieceSet, seed));
+            Flags = Masonry.Flags.With(flags, null);
+            levels.AddRange(LevelPlan.Generate(pieceSet, seed, flags));
             for (int l = 0; l < levels.Count; l++)
             {
                 var level = levels[l];

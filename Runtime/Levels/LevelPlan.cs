@@ -15,6 +15,8 @@ namespace Masonry
         public int Depth { get; internal set; }
         /// <summary>How many links led here (0 for the first level).</summary>
         public int Links { get; internal set; }
+        /// <summary>Flags this level was built with (the build's flags plus "main" or "linked").</summary>
+        public IReadOnlyCollection<string> Flags { get; internal set; }
     }
 
     /// <summary>
@@ -25,19 +27,25 @@ namespace Masonry
     public static class LevelPlan
     {
         /// <param name="maxDepth">How many links deep to follow (guards against sets that link back to each other).</param>
-        public static List<LevelLayout> Generate(PieceSet set, int seed, int maxDepth = 4)
+        /// <param name="flags">Build flags for entry conditions (see <see cref="Masonry.Flags"/>). Every level also gets
+        /// "main" or "linked".</param>
+        public static List<LevelLayout> Generate(PieceSet set, int seed, IEnumerable<string> flags = null, int maxDepth = 4)
         {
             var levels = new List<LevelLayout>();
             if (set == null)
                 return levels;
 
-            var generator = set.CreateGenerator(out var entries);
+            var mainFlags = Masonry.Flags.With(flags, Masonry.Flags.Main);
+            var linkedFlags = Masonry.Flags.With(flags, Masonry.Flags.Linked);
+
+            var generator = set.CreateGenerator(out var entries, mainFlags);
             levels.Add(new LevelLayout
             {
                 Set = set,
                 Entries = entries,
                 Generator = generator,
                 Layout = generator.Generate(seed),
+                Flags = mainFlags,
             });
 
             // Breadth-first: every level links onwards once it is built.
@@ -74,7 +82,7 @@ namespace Masonry
                 foreach (var target in order)
                 {
                     done.Add(target);
-                    var targetGenerator = target.CreateGenerator(out var targetEntries);
+                    var targetGenerator = target.CreateGenerator(out var targetEntries, linkedFlags);
                     var layoutStarts = new List<LayoutStart>();
                     foreach (var (position, yaw, arrival) in starts[target])
                         layoutStarts.Add(new LayoutStart(position, yaw, arrival != null ? targetEntries.FindIndex(e => e.piece == arrival) : -1));
@@ -87,6 +95,7 @@ namespace Masonry
                         Layout = targetGenerator.Generate(LevelSeed(seed, levels.Count), layoutStarts),
                         Depth = from.Depth + 1,
                         Links = layoutStarts.Count,
+                        Flags = linkedFlags,
                     });
                 }
             }

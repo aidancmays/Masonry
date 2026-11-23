@@ -8,8 +8,8 @@ namespace Masonry.Editor
     [CustomEditor(typeof(PieceSet))]
     sealed class PieceSetEditor : UnityEditor.Editor
     {
-        static readonly string[] PieceColumns = { "Piece", "Role", "Weight", "Min", "Max", "Depth" };
-        static readonly float[] PieceWidths = { 0.38f, 0.17f, 0.12f, 0.11f, 0.11f, 0.11f };
+        static readonly string[] PieceColumns = { "Piece", "Role", "Weight", "Min", "Max", "Depth", "Only If" };
+        static readonly float[] PieceWidths = { 0.29f, 0.15f, 0.1f, 0.08f, 0.08f, 0.09f, 0.21f };
         static readonly string[] TagColumns = { "Tag", "Min", "Max", "Depth", "Spacing" };
         static readonly float[] TagWidths = { 0.4f, 0.15f, 0.15f, 0.15f, 0.15f };
 
@@ -30,6 +30,7 @@ namespace Masonry.Editor
             "At least this many in every layout.",
             "At most this many. 0 = no limit.",
             "Fewest steps from the start piece.",
+            "Build flags this piece needs, comma separated; '!flag' = only without it. Empty = always. Builds always have 'main' or 'linked'.",
         };
 
         static readonly string[] TagTips =
@@ -51,7 +52,7 @@ namespace Masonry.Editor
             {
                 drawHeaderCallback = r => Header(r, PieceColumns, PieceWidths, PieceTips, 14f),
                 drawElementCallback = (r, i, _, _) => Row(r, pieceList.serializedProperty.GetArrayElementAtIndex(i),
-                    new[] { "piece", "role", "weight", "minCount", "maxCount", "minDepth" }, PieceWidths),
+                    new[] { "piece", "role", "weight", "minCount", "maxCount", "minDepth", "condition" }, PieceWidths),
                 elementHeight = EditorGUIUtility.singleLineHeight + 4f,
             };
             tagList = new ReorderableList(serializedObject, serializedObject.FindProperty("tagRules"), true, true, true, true)

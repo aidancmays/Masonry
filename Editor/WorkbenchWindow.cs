@@ -25,6 +25,7 @@ namespace Masonry.Editor
         [SerializeField] int batchSize = 200;
         [SerializeField] float rulesWidth = 380f;
         [SerializeField] int viewLevel;
+        [SerializeField] string flagsText = "";
 
         UnityEditor.Editor setEditor;
         Vector2 rulesScroll;
@@ -202,6 +203,17 @@ namespace Masonry.Editor
                 GUILayout.Label("Size", EditorStyles.miniLabel, GUILayout.ExpandWidth(false));
                 mapSize = GUILayout.HorizontalSlider(mapSize, 120f, 520f, GUILayout.Width(80f));
 
+                GUILayout.Space(8f);
+                GUILayout.Label(new GUIContent("Flags", "Build flags for entry conditions, comma separated, as the game would pass them (e.g. exit-gate)."), EditorStyles.miniLabel, GUILayout.ExpandWidth(false));
+                EditorGUI.BeginChangeCheck();
+                flagsText = EditorGUILayout.DelayedTextField(flagsText, EditorStyles.toolbarTextField, GUILayout.Width(120f));
+                if (EditorGUI.EndChangeCheck())
+                {
+                    selected = -1;
+                    stats = null;
+                    MarkDirty();
+                }
+
                 GUILayout.FlexibleSpace();
                 if (levelNames.Length > 1)
                 {
@@ -275,7 +287,7 @@ namespace Masonry.Editor
                 }
                 for (int i = 0; i < pageSize; i++)
                 {
-                    var levels = LevelPlan.Generate(set, firstSeed + i);
+                    var levels = LevelPlan.Generate(set, firstSeed + i, Flags.Parse(flagsText));
                     pageLevels.Add(levels);
                     foreach (var level in levels)
                         levelOf[level.Layout] = level;
@@ -312,7 +324,7 @@ namespace Masonry.Editor
             entries = level.Entries;
             if (!tagsOf.TryGetValue(level.Set, out tags))
             {
-                level.Set.CreateGenerator(out _, out tags);
+                level.Set.CreateGenerator(out _, out tags, level.Flags as ICollection<string>);
                 tagsOf[level.Set] = tags;
             }
             if (!boundaryDefsOf.TryGetValue(level.Set, out boundaryDefs))
@@ -634,7 +646,7 @@ namespace Masonry.Editor
                 builder.PieceSet = set;
             }
 
-            builder.BuildPreview(seed);
+            builder.BuildPreview(seed, Flags.Parse(flagsText));
             Selection.activeGameObject = builder.gameObject;
 
             var bounds = new Bounds(builder.transform.position, Vector3.one);
