@@ -45,6 +45,28 @@ namespace Masonry
             [Min(0)] public int minDepth;
             [Tooltip("Fewest steps between two pieces with the tag. 0 or 1 = they may touch.")]
             [Min(0)] public int minSpacing;
+            [Tooltip("Pieces with the tag must be at least this many steps deeper or shallower than each other, so each one is further in than the last. 0 = no rule.")]
+            [Min(0)] public int depthStep;
+        }
+
+        /// <summary>Keeps every piece carrying any of these tags apart from every other.</summary>
+        [Serializable]
+        public sealed class SpacingRuleEntry
+        {
+            [Tooltip("Pieces with any of these tags (e.g. Entrance, Objective, Exit).")]
+            public List<PieceTag> tags = new();
+            [Tooltip("Fewest steps between any two of them.")]
+            [Min(0)] public int minSteps = 3;
+        }
+
+        /// <summary>Long dead ends must end in a piece with one of these tags.</summary>
+        [Serializable]
+        public sealed class DeadEndEntry
+        {
+            [Tooltip("Dead ends whose corridor (back to the nearest junction or start) is at least this many pieces long must end in a tagged piece. 0 = no rule.")]
+            [Min(0)] public int minLength;
+            [Tooltip("Tags that count as something worth reaching: an objective, a reward, a hazard, an exit...")]
+            public List<PieceTag> tags = new();
         }
 
         /// <summary>The boundary between two module types, or between one and the edge of the layout.</summary>
@@ -66,6 +88,8 @@ namespace Masonry
         [SerializeField, Min(0f)] float gridSize;
         [SerializeField] List<Entry> pieces = new();
         [SerializeField] List<TagRuleEntry> tagRules = new();
+        [SerializeField] List<SpacingRuleEntry> spacingRules = new();
+        [SerializeField] DeadEndEntry deadEnds = new();
 
         public LayoutSettings Settings
         {
@@ -81,6 +105,8 @@ namespace Masonry
 
         public List<Entry> Pieces => pieces;
         public List<TagRuleEntry> TagRules => tagRules;
+        public List<SpacingRuleEntry> SpacingRules => spacingRules;
+        public DeadEndEntry DeadEnds => deadEnds ??= new DeadEndEntry();
         public List<BoundaryRule> BoundaryRules => boundaryRules;
 
         public BoundaryStyle DefaultBoundary
@@ -156,8 +182,25 @@ namespace Masonry
                     maxCount = r.maxCount,
                     minDepth = r.minDepth,
                     minSpacing = r.minSpacing,
+                    depthStep = r.depthStep,
                 });
             }
+
+            int[] TagIds(List<PieceTag> list)
+            {
+                var ids = new List<int>();
+                if (list != null)
+                    foreach (var t in list)
+                        if (t != null && !ids.Contains(TagId(t)))
+                            ids.Add(TagId(t));
+                return ids.ToArray();
+            }
+
+            var spacing = new List<SpacingRule>();
+            foreach (var r in spacingRules)
+                if (r != null)
+                    spacing.Add(new SpacingRule { tags = TagIds(r.tags), minSteps = r.minSteps });
+            var deadEndRule = new DeadEndRule { minLength = DeadEnds.minLength, tags = TagIds(DeadEnds.tags) };
 
             foreach (var e in pieces)
             {
@@ -174,7 +217,7 @@ namespace Masonry
             }
 
             tags = tagList;
-            return new LayoutGenerator(definitions, settings, (a, b) => SocketType.CanJoin(types[a], types[b]), rules);
+            return new LayoutGenerator(definitions, settings, (a, b) => SocketType.CanJoin(types[a], types[b]), rules, spacing, deadEndRule);
         }
     }
 }

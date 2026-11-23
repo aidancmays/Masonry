@@ -436,7 +436,7 @@ namespace Masonry.Editor
                 DrawMap(mapRect, layout, i == selected);
 
                 var caption = new Rect(cell.x, cell.y + mapSize + 2f, mapSize, CaptionHeight - 2f);
-                string status = layout.Valid ? "" : "  ✗ rules not met";
+                string status = layout.Valid ? "" : layout.DeadEndViolations > 0 ? $"  ✗ {layout.DeadEndViolations} empty dead end(s)" : "  ✗ rules not met";
                 GUI.Label(caption, $"Seed {firstSeed + i}{status}\n{Grown(layout)} pieces, {Count(layout, PieceRole.Cap)} caps, {layout.OpenSockets.Count} open", EditorStyles.miniLabel);
 
                 var e = Event.current;
@@ -511,6 +511,16 @@ namespace Masonry.Editor
             var start = toScreen(Center(layout, 0));
             Handles.color = Color.white;
             Handles.DrawWireDisc(start, Vector3.forward, 5f);
+
+            // Long dead ends with nothing at the end.
+            int minLength = generator.DeadEndRule.minLength;
+            if (minLength > 0)
+            {
+                Handles.color = new Color(1f, 0.25f, 0.2f);
+                foreach (var d in layout.DeadEnds)
+                    if (!d.hasContent && d.length >= minLength)
+                        Handles.DrawWireDisc(toScreen(Center(layout, d.placement)), Vector3.forward, 7f, 2f);
+            }
         }
 
         void HoverLabel(Rect rect, Layout layout)
@@ -553,7 +563,7 @@ namespace Masonry.Editor
                 Swatch(CapColor, "Cap");
                 foreach (var style in BoundaryStyles())
                     Swatch(style.Color, style.name);
-                Swatch(new Color(1f, 0.25f, 0.2f), "Open socket");
+                Swatch(new Color(1f, 0.25f, 0.2f), "Open socket / empty dead end");
                 GUILayout.FlexibleSpace();
             }
             EditorGUILayout.LabelField("Click a map to select it, double-click to build it in the scene. Lines join connected pieces.", EditorStyles.miniLabel);

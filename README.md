@@ -7,7 +7,7 @@ so a multiplayer game only has to share one integer.
 ## Install
 
 ```json
-"com.aidancmays.masonry": "https://github.com/aidancmays/Masonry.git#v0.5.0"
+"com.aidancmays.masonry": "https://github.com/aidancmays/Masonry.git#v0.6.0"
 ```
 
 No dependencies besides Unity 6.3.
@@ -66,6 +66,18 @@ Add each prefab to a Piece Set and choose its role:
 are retried with the next seeded try). *Max Count* limits it (0 = no limit). *Min Depth* keeps it at least that many
 steps from the start piece, so an exit can be kept far from the entrance. A required piece may have weight 0: it is
 then only placed when the budget runs low, which tends to put it near the end of a branch.
+
+### Spacing, depth steps and dead ends
+
+- **Spacing rules** keep every piece carrying any of a rule's tags a number of steps from every other: e.g.
+  Entrance, Objective and Exit at least 3 apart, so key tiles are never stacked together. Loops that would break
+  it are left unjoined.
+- A tag rule's **Step** makes pieces with that tag sit at least that many steps deeper or shallower than each other,
+  so each objective is further into the level than the last.
+- The **Dead Ends** rule: any dead end whose corridor (back to the nearest junction or start) is at least *Min
+  Length* pieces long must end in a piece with one of the *Must End In* tags (objective, reward, hazard, exit...).
+  Caps with those tags are preferred there; layouts that still break it are retried. `Layout.DeadEnds` lists every
+  dead end; the Workbench circles empty long ones in red.
 
 ### Conditions and build flags
 

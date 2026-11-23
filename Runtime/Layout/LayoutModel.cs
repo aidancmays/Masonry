@@ -96,6 +96,16 @@ namespace Masonry
 
         public bool HasTag(int tag) => Array.IndexOf(tags, tag) >= 0;
 
+        public bool HasAnyTag(int[] any)
+        {
+            if (any == null)
+                return false;
+            foreach (int t in any)
+                if (Array.IndexOf(tags, t) >= 0)
+                    return true;
+            return false;
+        }
+
         public override string ToString() => name;
     }
 
@@ -113,6 +123,47 @@ namespace Masonry
         public int minDepth;
         /// <summary>Fewest steps between two pieces with this tag (1 = may touch, 0 = no rule).</summary>
         public int minSpacing;
+        /// <summary>
+        /// Pieces with this tag must sit at least this many steps deeper or shallower than each other (0 = no rule),
+        /// so a run of objectives leads further and further into the level.
+        /// </summary>
+        public int depthStep;
+    }
+
+    /// <summary>Keeps every piece carrying any of these tags at least <see cref="minSteps"/> steps from every other.</summary>
+    public struct SpacingRule
+    {
+        public int[] tags;
+        public int minSteps;
+    }
+
+    /// <summary>
+    /// Long dead ends must end in something: a dead end at the end of a corridor of at least <see cref="minLength"/>
+    /// pieces (counted back to the nearest junction or start) has to be a piece with one of <see cref="tags"/>.
+    /// The generator prefers such caps there, and layouts that still break the rule are retried.
+    /// </summary>
+    public struct DeadEndRule
+    {
+        /// <summary>0 = no rule.</summary>
+        public int minLength;
+        public int[] tags;
+    }
+
+    /// <summary>A dead end in a layout: a piece with at most one neighbour.</summary>
+    public readonly struct DeadEnd
+    {
+        public readonly int placement;
+        /// <summary>Pieces in the corridor that ends here, back to the nearest junction or start.</summary>
+        public readonly int length;
+        /// <summary>True when the piece carries one of the dead-end rule's tags.</summary>
+        public readonly bool hasContent;
+
+        public DeadEnd(int placement, int length, bool hasContent)
+        {
+            this.placement = placement;
+            this.length = length;
+            this.hasContent = hasContent;
+        }
     }
 
     /// <summary>One placed piece. Position and yaw are relative to the layout origin.</summary>
@@ -181,6 +232,12 @@ namespace Masonry
         public List<Connection> Connections { get; } = new();
         /// <summary>Sockets still unconnected after capping.</summary>
         public List<SocketRef> OpenSockets { get; } = new();
+
+        /// <summary>Every dead end (start pieces left out), with how long its corridor is.</summary>
+        public List<DeadEnd> DeadEnds { get; } = new();
+
+        /// <summary>Long dead ends that break the dead-end rule (0 in a valid layout).</summary>
+        public int DeadEndViolations { get; internal set; }
 
         public int CountWithTag(int tag)
         {

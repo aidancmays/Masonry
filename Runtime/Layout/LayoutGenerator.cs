@@ -27,6 +27,8 @@ namespace Masonry
         readonly IReadOnlyList<PieceDefinition> pieces;
         readonly TagRule[] tagRules;
         readonly bool[] tagRuleGrows; // some Normal piece carries the tag, so growth can pay it off
+        readonly List<(int[] tags, int minSteps)> spacing = new(); // tag rule spacing and spacing rules alike
+        readonly DeadEndRule deadEnds;
         readonly Compatibility compatible;
         readonly LayoutSettings settings;
 
@@ -48,8 +50,9 @@ namespace Masonry
         IReadOnlyList<LayoutStart> starts;
 
         public LayoutGenerator(IReadOnlyList<PieceDefinition> pieces, LayoutSettings settings, Compatibility compatible = null,
-            IReadOnlyList<TagRule> tagRules = null)
+            IReadOnlyList<TagRule> tagRules = null, IReadOnlyList<SpacingRule> spacingRules = null, DeadEndRule deadEnds = default)
         {
+            this.deadEnds = deadEnds;
             this.pieces = pieces ?? throw new ArgumentNullException(nameof(pieces));
             this.settings = settings;
             this.compatible = compatible ?? ((a, b) => a == b);
@@ -62,8 +65,16 @@ namespace Masonry
                 foreach (var p in pieces)
                     if (p.role == PieceRole.Normal && p.HasTag(this.tagRules[r].tag))
                         tagRuleGrows[r] = true;
+                if (this.tagRules[r].minSpacing > 1)
+                    spacing.Add((new[] { this.tagRules[r].tag }, this.tagRules[r].minSpacing));
             }
+            if (spacingRules != null)
+                foreach (var rule in spacingRules)
+                    if (rule.minSteps > 1 && rule.tags != null && rule.tags.Length > 0)
+                        spacing.Add((rule.tags, rule.minSteps));
         }
+
+        public DeadEndRule DeadEndRule => deadEnds;
 
         public IReadOnlyList<PieceDefinition> Pieces => pieces;
         public IReadOnlyList<TagRule> TagRules => tagRules;
@@ -119,7 +130,7 @@ namespace Masonry
                 missing += Mathf.Max(0, pieces[p].minCount - result.CountOf(p));
             foreach (var rule in tagRules)
                 missing += Mathf.Max(0, rule.minCount - result.CountWithTag(rule.tag));
-            return missing;
+            return missing + result.DeadEndViolations;
         }
 
         // ---- One try ------------------------------------------------------------------------------------------
@@ -190,6 +201,7 @@ namespace Masonry
             Cap();
 
             layout.OpenSockets.AddRange(open);
+            FindDeadEnds();
             layout.Valid = grown >= min && Deficit(layout) == 0;
             return layout;
         }
@@ -222,7 +234,12 @@ namespace Masonry
                 placed = false;
                 for (int i = 0; i < open.Count; i++)
                 {
-                    if (TryAdd(open[i], PieceRole.Cap, int.MaxValue, owedOnly: true) || TryAdd(open[i], PieceRole.Cap, int.MaxValue))
+                    // A cap here ends a corridor; if that corridor is long, it should end in something.
+                    var s = open[i];
+                    bool needsContent = deadEnds.minLength > 0 && 1 + Corridor(s.placement, -1, s.placement) >= deadEnds.minLength;
+                    if (TryAdd(s, PieceRole.Cap, int.MaxValue, owedOnly: true)
+                        || (needsContent && TryAdd(s, PieceRole.Cap, int.MaxValue, contentOnly: true))
+                        || TryAdd(s, PieceRole.Cap, int.MaxValue))
                     {
                         placed = true;
                         i = -1; // the open list changed; start over from the top
@@ -232,7 +249,7 @@ namespace Masonry
         }
 
         /// <summary>Tries pieces of one role on an open socket.</summary>
-        bool TryAdd(SocketRef from, PieceRole role, int remaining, bool owedOnly = false)
+        bool TryAdd(SocketRef from, PieceRole role, int remaining, bool owedOnly = false, bool contentOnly = false)
         {
             var parent = layout.Placements[from.placement];
             int type = pieces[parent.piece].sockets[from.socket].type;
@@ -250,6 +267,8 @@ namespace Masonry
             {
                 var d = pieces[p];
                 if (d.role != role || (owedOnly && !IsOwed(p)) || Weight(p) <= 0f)
+                    continue;
+                if (contentOnly && !d.HasAnyTag(deadEnds.tags))
                     continue;
                 if (!HasCompatibleSocket(d, type) || !Allowed(p, depth, from.placement))
                     continue;
@@ -325,35 +344,76 @@ namespace Masonry
             }
         }
 
-        // A loop can bring two tagged pieces closer than their rule allows; such sockets are left unjoined.
+        // A loop can bring two spaced pieces closer than their rule allows; such sockets are left unjoined.
         bool JoinKeepsSpacing(int a, int b)
         {
-            bool any = false;
-            foreach (var rule in tagRules)
-                any |= rule.minSpacing > 1;
-            if (!any || a == b || neighbours[a].Contains(b))
+            if (spacing.Count == 0 || a == b || neighbours[a].Contains(b))
                 return true;
 
             var fromA = Steps(a);
             var fromB = Steps(b);
-            foreach (var rule in tagRules)
+            foreach (var (tags, minSteps) in spacing)
             {
-                if (rule.minSpacing <= 1)
-                    continue;
                 for (int i = 0; i < fromA.Length; i++)
                 {
-                    if (fromA[i] < 0 || !pieces[layout.Placements[i].piece].HasTag(rule.tag))
+                    if (fromA[i] < 0 || !pieces[layout.Placements[i].piece].HasAnyTag(tags))
                         continue;
                     for (int k = 0; k < fromB.Length; k++)
                     {
-                        if (k == i || fromB[k] < 0 || !pieces[layout.Placements[k].piece].HasTag(rule.tag))
+                        if (k == i || fromB[k] < 0 || !pieces[layout.Placements[k].piece].HasAnyTag(tags))
                             continue;
-                        if (fromA[i] + 1 + fromB[k] < rule.minSpacing)
+                        if (fromA[i] + 1 + fromB[k] < minSteps)
                             return false;
                     }
                 }
             }
             return true;
+        }
+
+        // ---- Dead ends ----------------------------------------------------------------------------------------
+
+        // Pieces in the corridor through `node`, walking away from `from`, up to a junction or a start piece.
+        // `extraOn` counts one more connection on that piece (a cap about to be added there).
+        int Corridor(int node, int from, int extraOn)
+        {
+            int length = 0, prev = from, cur = node;
+            while (cur >= 0 && length <= layout.Placements.Count)
+            {
+                var role = pieces[layout.Placements[cur].piece].role;
+                if (role == PieceRole.Start || role == PieceRole.Arrival)
+                    break;
+                int degree = neighbours[cur].Count + (cur == extraOn ? 1 : 0);
+                if (degree >= 3)
+                    break;
+                length++;
+                int next = -1;
+                foreach (int n in neighbours[cur])
+                    if (n != prev)
+                    {
+                        next = n;
+                        break;
+                    }
+                prev = cur;
+                cur = next;
+            }
+            return length;
+        }
+
+        void FindDeadEnds()
+        {
+            int violations = 0;
+            for (int i = 0; i < layout.Placements.Count; i++)
+            {
+                var d = pieces[layout.Placements[i].piece];
+                if (d.role == PieceRole.Start || d.role == PieceRole.Arrival || neighbours[i].Count > 1)
+                    continue;
+                int length = Corridor(i, -1, -1);
+                bool content = d.HasAnyTag(deadEnds.tags);
+                layout.DeadEnds.Add(new DeadEnd(i, length, content));
+                if (deadEnds.minLength > 0 && !content && length >= deadEnds.minLength)
+                    violations++;
+            }
+            layout.DeadEndViolations = violations;
         }
 
         int[] Steps(int source)
@@ -427,22 +487,32 @@ namespace Masonry
                     continue;
                 if ((rule.maxCount > 0 && tagCounts[r] >= rule.maxCount) || depth < rule.minDepth)
                     return false;
-                if (rule.minSpacing > 1 && tagCounts[r] > 0 && !FarEnough(rule.tag, rule.minSpacing, parent))
-                    return false;
+                if (rule.depthStep > 0)
+                    foreach (var p in layout.Placements)
+                        if (pieces[p.piece].HasTag(rule.tag) && Mathf.Abs(p.depth - depth) < rule.depthStep)
+                            return false;
             }
+            foreach (var (tags, minSteps) in spacing)
+                if (d.HasAnyTag(tags) && !FarEnough(tags, minSteps, parent))
+                    return false;
             return true;
         }
 
-        // Steps from a new piece (one past its parent) to every placed piece with the tag.
-        bool FarEnough(int tag, int spacing, int parent)
+        // Steps from a new piece (one past its parent) to every placed piece with any of the tags.
+        bool FarEnough(int[] tags, int minSteps, int parent)
         {
+            bool any = false;
+            foreach (var p in layout.Placements)
+                any |= pieces[p.piece].HasAnyTag(tags);
+            if (!any)
+                return true;
             DistancesFrom(parent);
             for (int i = 0; i < layout.Placements.Count; i++)
             {
-                if (!pieces[layout.Placements[i].piece].HasTag(tag))
+                if (!pieces[layout.Placements[i].piece].HasAnyTag(tags))
                     continue;
                 int d = distances[i];
-                if (d >= 0 && d + 1 < spacing)
+                if (d >= 0 && d + 1 < minSteps)
                     return false;
             }
             return true;

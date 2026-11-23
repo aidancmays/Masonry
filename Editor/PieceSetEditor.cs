@@ -10,8 +10,8 @@ namespace Masonry.Editor
     {
         static readonly string[] PieceColumns = { "Piece", "Role", "Weight", "Min", "Max", "Depth", "Only If" };
         static readonly float[] PieceWidths = { 0.29f, 0.15f, 0.1f, 0.08f, 0.08f, 0.09f, 0.21f };
-        static readonly string[] TagColumns = { "Tag", "Min", "Max", "Depth", "Spacing" };
-        static readonly float[] TagWidths = { 0.4f, 0.15f, 0.15f, 0.15f, 0.15f };
+        static readonly string[] TagColumns = { "Tag", "Min", "Max", "Depth", "Spacing", "Step" };
+        static readonly float[] TagWidths = { 0.35f, 0.13f, 0.13f, 0.13f, 0.13f, 0.13f };
 
         static readonly string[] BoundaryColumns = { "Module", "Meets", "Boundary" };
         static readonly float[] BoundaryWidths = { 0.34f, 0.34f, 0.32f };
@@ -40,6 +40,7 @@ namespace Masonry.Editor
             "At most this many. 0 = no limit.",
             "Fewest steps from the start piece.",
             "Fewest steps between two pieces with the tag. 0 or 1 = may touch.",
+            "Each piece with the tag at least this many steps deeper or shallower than the others, so they lead further in. 0 = no rule.",
         };
 
         ReorderableList pieceList;
@@ -59,7 +60,7 @@ namespace Masonry.Editor
             {
                 drawHeaderCallback = r => Header(r, TagColumns, TagWidths, TagTips, 14f),
                 drawElementCallback = (r, i, _, _) => Row(r, tagList.serializedProperty.GetArrayElementAtIndex(i),
-                    new[] { "tag", "minCount", "maxCount", "minDepth", "minSpacing" }, TagWidths),
+                    new[] { "tag", "minCount", "maxCount", "minDepth", "minSpacing", "depthStep" }, TagWidths),
                 elementHeight = EditorGUIUtility.singleLineHeight + 4f,
             };
             boundaryList = new ReorderableList(serializedObject, serializedObject.FindProperty("boundaryRules"), true, true, true, true)
@@ -100,6 +101,14 @@ namespace Masonry.Editor
 
             EditorGUILayout.LabelField("Tag Rules", EditorStyles.boldLabel);
             tagList.DoLayoutList();
+
+            EditorGUILayout.LabelField(new GUIContent("Spacing", "Keeps every piece with any of a rule's tags a number of steps from every other, e.g. entrances, objectives and exits."), EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(serializedObject.FindProperty("spacingRules"), new GUIContent("Spacing Rules"), true);
+
+            EditorGUILayout.LabelField(new GUIContent("Dead Ends", "Long dead ends must end in a piece worth reaching."), EditorStyles.boldLabel);
+            var deadEnds = serializedObject.FindProperty("deadEnds");
+            EditorGUILayout.PropertyField(deadEnds.FindPropertyRelative("minLength"), new GUIContent("Min Length", "Dead ends this many pieces long or more need one of the tags below. 0 = no rule."));
+            EditorGUILayout.PropertyField(deadEnds.FindPropertyRelative("tags"), new GUIContent("Must End In"), true);
 
             EditorGUILayout.LabelField(new GUIContent("Boundaries", "Which boundary goes where two module types meet. Rules match either way round; the first match wins."), EditorStyles.boldLabel);
             EditorGUILayout.PropertyField(serializedObject.FindProperty("defaultBoundary"), new GUIContent("Default", "Boundary for meetings no rule covers. Empty = none."));

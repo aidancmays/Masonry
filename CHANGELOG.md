@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.6.0] - 2026-11-23
+
+- Spacing rules: pieces with any of a set of tags (e.g. Entrance, Objective, Exit) keep a minimum number of steps
+  from each other, including across loops. Tag rules' spacing uses the same machinery.
+- Tag rule *Step* (`TagRule.depthStep`): tagged pieces sit at least that many steps deeper or shallower than each
+  other, so objectives lead further in.
+- Dead-end rule: long dead ends must end in a piece with one of the given tags. Caps with those tags are preferred
+  at the end of long corridors; layouts that still break the rule are retried. `Layout.DeadEnds`,
+  `Layout.DeadEndViolations`, `PieceDefinition.HasAnyTag`.
+- Workbench: empty long dead ends circled in red; Piece Set inspector shows spacing and dead-end rules.
+
 ## [0.5.0] - 2026-11-23
 
 - Build flags and entry conditions: `PieceSet.Entry.condition` ("exit-gate", "!night", "main, floor-3"...) picks
