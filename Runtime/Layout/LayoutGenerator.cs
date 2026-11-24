@@ -508,7 +508,7 @@ namespace Masonry
                 var rule = tagRules[r];
                 if (!d.HasTag(rule.tag))
                     continue;
-                if ((rule.maxCount > 0 && tagCounts[r] >= rule.maxCount) || depth < rule.minDepth)
+                if ((rule.maxCount != 0 && tagCounts[r] >= Mathf.Max(0, rule.maxCount)) || depth < rule.minDepth)
                     return false;
                 if (rule.depthStep > 0)
                     foreach (var p in layout.Placements)

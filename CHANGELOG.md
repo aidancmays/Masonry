@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.9.0] - 2026-11-24
+
+- `BuildOptions.linkedTagCounts`: tag counts for linked levels built from a given set, so a game can spread a fixed
+  number of objectives between a level and the levels below it.
+- Tag rules and `BuildOptions.TagCount` take a negative max count for "none at all"; `TagCount.Exactly(tag, n)`.
+
 ## [0.8.0] - 2026-11-23
 
 - `LayoutSettings.depthBias`: how often growth continues from the deepest open socket. Deeper layouts fit many

@@ -96,7 +96,7 @@ namespace Masonry
                 foreach (var target in order)
                 {
                     done.Add(target);
-                    var targetGenerator = target.CreateGenerator(out var targetEntries, linkedFlags);
+                    var targetGenerator = target.CreateGenerator(out var targetEntries, out _, linkedFlags, options.ForLinked(target));
                     var layoutStarts = new List<LayoutStart>();
                     foreach (var (position, yaw, arrival) in starts[target])
                         layoutStarts.Add(new LayoutStart(position, yaw, arrival != null ? targetEntries.FindIndex(e => e.piece == arrival) : -1));

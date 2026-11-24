@@ -669,6 +669,8 @@ namespace Masonry.Editor
 
         static string RuleRange(int min, int max)
         {
+            if (max < 0)
+                return "none";
             if (max > 0 && min == max)
                 return $"exactly {min}";
             if (max > 0)

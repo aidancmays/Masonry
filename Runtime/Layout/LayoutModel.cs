@@ -119,7 +119,7 @@ namespace Masonry
     {
         public int tag;
         public int minCount;
-        /// <summary>0 = no limit.</summary>
+        /// <summary>0 = no limit; negative = none at all.</summary>
         public int maxCount;
         /// <summary>Fewest steps from the start piece.</summary>
         public int minDepth;

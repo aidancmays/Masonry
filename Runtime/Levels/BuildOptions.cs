@@ -30,13 +30,16 @@ namespace Masonry
         [Tooltip("Exact or ranged counts for tags on the first level, replacing the set's rule for that tag.")]
         public List<TagCount> tagCounts = new();
 
+        [Tooltip("Tag counts for linked levels built from a given set (objectives in the crypt below, say), replacing that set's rule for those tags.")]
+        public List<LinkedTagCounts> linkedTagCounts = new();
+
         [Serializable]
         public struct TagCount
         {
             public PieceTag tag;
             [Min(0)] public int minCount;
-            [Tooltip("0 = no limit.")]
-            [Min(0)] public int maxCount;
+            [Tooltip("0 = no limit, -1 = none at all.")]
+            [Min(-1)] public int maxCount;
 
             public TagCount(PieceTag tag, int minCount, int maxCount)
             {
@@ -44,6 +47,36 @@ namespace Masonry
                 this.minCount = minCount;
                 this.maxCount = maxCount;
             }
+
+            /// <summary>Exactly <paramref name="count"/> pieces with the tag (0 = none).</summary>
+            public static TagCount Exactly(PieceTag tag, int count) => new(tag, Mathf.Max(0, count), count > 0 ? count : -1);
+        }
+
+        /// <summary>Tag counts for every linked level built from one set.</summary>
+        [Serializable]
+        public struct LinkedTagCounts
+        {
+            public PieceSet set;
+            public List<TagCount> tagCounts;
+
+            public LinkedTagCounts(PieceSet set, List<TagCount> tagCounts)
+            {
+                this.set = set;
+                this.tagCounts = tagCounts;
+            }
+        }
+
+        /// <summary>Overrides for a linked level built from <paramref name="set"/> (tag counts only), or null.</summary>
+        public BuildOptions ForLinked(PieceSet set)
+        {
+            BuildOptions linked = null;
+            foreach (var l in linkedTagCounts)
+                if (l.set == set && l.tagCounts != null)
+                {
+                    linked ??= new BuildOptions();
+                    linked.tagCounts.AddRange(l.tagCounts);
+                }
+            return linked;
         }
 
         public BuildOptions() { }

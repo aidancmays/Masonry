@@ -153,6 +153,39 @@ namespace Masonry.Tests
         }
 
         [Test]
+        public void LinkedTagCountsReplaceTheLinkedSetsRule()
+        {
+            var n = (new Vector3(0f, 0f, Half), 0f);
+            var s = (new Vector3(0f, 0f, -Half), 180f);
+            var objective = ScriptableObject.CreateInstance<PieceTag>();
+            created.Add(objective);
+
+            var stairFoot = Piece("Stair Foot", n);
+            var cross = Piece("Cross", n, s, (new Vector3(Half, 0f, 0f), 90f), (new Vector3(-Half, 0f, 0f), 270f));
+            var shrine = Piece("Shrine", s);
+            shrine.Tags.Add(objective);
+            var crypt = Set("Crypt", 6, 8, (stairFoot, PieceRole.Arrival, 0, 0), (cross, PieceRole.Normal, 0, 0), (shrine, PieceRole.Cap, 0, 0), (Piece("Wall", s), PieceRole.Cap, 0, 0));
+            crypt.TagRules.Add(new PieceSet.TagRuleEntry { tag = objective, minCount = 2, maxCount = 2 });
+
+            var gate = Piece("Gate", n);
+            var path = Piece("Path", n, s);
+            var entrance = Piece("Entrance", s);
+            AddLink(entrance, crypt);
+            var surface = Set("Surface", 4, 5, (gate, PieceRole.Start, 0, 0), (path, PieceRole.Normal, 0, 0), (entrance, PieceRole.Normal, 1, 1));
+
+            int Objectives(List<LevelLayout> levels) => levels[1].Layout.Placements.FindAll(p => levels[1].Entries[p.piece].piece == shrine).Count;
+
+            for (int seed = 1; seed <= 20; seed++)
+            {
+                Assert.AreEqual(2, Objectives(LevelPlan.Generate(surface, seed)), "the set's own rule");
+                var one = new BuildOptions { linkedTagCounts = { new BuildOptions.LinkedTagCounts(crypt, new List<BuildOptions.TagCount> { BuildOptions.TagCount.Exactly(objective, 1) }) } };
+                Assert.AreEqual(1, Objectives(LevelPlan.Generate(surface, seed, one)), $"seed {seed}: one");
+                var none = new BuildOptions { linkedTagCounts = { new BuildOptions.LinkedTagCounts(crypt, new List<BuildOptions.TagCount> { BuildOptions.TagCount.Exactly(objective, 0) }) } };
+                Assert.AreEqual(0, Objectives(LevelPlan.Generate(surface, seed, none)), $"seed {seed}: none");
+            }
+        }
+
+        [Test]
         public void SetsThatLinkBackDoNotLoop()
         {
             var n = (new Vector3(0f, 0f, Half), 0f);
